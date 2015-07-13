@@ -98,9 +98,7 @@ PHP_FUNCTION(runkit_class_emancipate)
 		RETURN_TRUE;
 	}
 
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 5)
 	php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
-#endif
 
 	zend_hash_apply_with_argument(&ce->function_table, (apply_func_arg_t)php_runkit_remove_inherited_methods, ce TSRMLS_CC);
 
@@ -158,8 +156,7 @@ static int php_runkit_inherit_methods(zend_function *fe, zend_class_entry *ce TS
 		return ZEND_HASH_APPLY_KEEP;
 	}
 
-	if (zend_hash_find(&ce->function_table, fname_lower, fname_lower_len + 1, (void*)&fe) == FAILURE ||
-	    !fe) {
+	if ((fe = zend_hash_str_find(&ce->function_table, lower_function_name, function_name_len + 1, (void*)&fe)) == NULL) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to locate newly added method");
 		efree(fname_lower);
 		return ZEND_HASH_APPLY_KEEP;
@@ -199,7 +196,6 @@ int php_runkit_class_copy(zend_class_entry *src, const char *classname, int clas
 
 	zend_initialize_class_data(new_class_entry, 1 TSRMLS_CC);
 	new_class_entry->parent = parent;
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 5)
 	new_class_entry->info.user.filename = src->info.user.filename;
 	new_class_entry->info.user.line_start = src->info.user.line_start;
 	new_class_entry->info.user.doc_comment = src->info.user.doc_comment;
@@ -207,13 +203,6 @@ int php_runkit_class_copy(zend_class_entry *src, const char *classname, int clas
 	new_class_entry->info.user.line_end = src->info.user.line_end;
 	new_class_entry->num_traits = src->num_traits;
 	new_class_entry->traits = src->traits;
-#else
-	new_class_entry->filename = src->filename;
-	new_class_entry->line_start = src->line_start;
-	new_class_entry->doc_comment = src->doc_comment;
-	new_class_entry->doc_comment_len = src->doc_comment_len;
-	new_class_entry->line_end = src->line_end;
-#endif
 	new_class_entry->ce_flags = src->ce_flags;
 
 	zend_hash_update(EG(class_table), classname_lower, classname_lower_len + 1, &new_class_entry, sizeof(zend_class_entry *), NULL);
@@ -271,22 +260,9 @@ PHP_FUNCTION(runkit_class_adopt)
 			const char *last_null;
 
 			if (property_info_ptr->flags & ZEND_ACC_STATIC) {
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 5)
 				pp = &CE_STATIC_MEMBERS(parent)[property_info_ptr->offset];
-#else
-				zend_hash_quick_find(CE_STATIC_MEMBERS(parent), property_info_ptr->name, property_info_ptr->name_length + 1, property_info_ptr->h, (void*) &pp);
-#endif
 			} else {
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4)
 				pp = &parent->default_properties_table[property_info_ptr->offset];
-#else
-				if (zend_hash_quick_find(&parent->default_properties, property_info_ptr->name, property_info_ptr->name_length + 1, property_info_ptr->h, (void*) &pp) != SUCCESS) {
-					php_error_docref(NULL TSRMLS_CC, E_WARNING,
-					                 "Cannot inherit broken default property %s->%s", parent->name, key);
-					zend_hash_move_forward_ex(&ce->properties_info, &pos);
-					continue;
-				}
-#endif // (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 5)
 			}
 
 			php_runkit_zval_resolve_class_constant(pp, parent TSRMLS_CC);
@@ -305,9 +281,7 @@ PHP_FUNCTION(runkit_class_adopt)
 		zend_hash_move_forward_ex(&ce->properties_info, &pos);
 	}
 
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 5)
 	php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
-#endif
 
 	zend_hash_apply_with_argument(&parent->function_table, (apply_func_arg_t)php_runkit_inherit_methods, ce TSRMLS_CC);
 

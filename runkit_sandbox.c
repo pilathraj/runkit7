@@ -55,9 +55,6 @@ static zend_class_entry *php_runkit_sandbox_class_entry;
 int php_runkit_sandbox_array_deep_copy(RUNKIT_53_TSRMLS_ARG(zval **value), int num_args, va_list args, zend_hash_key *hash_key)
 {
 	HashTable *target_hashtable = va_arg(args, HashTable*);
-#if (RUNKIT_UNDER53)
-	TSRMLS_D = va_arg(args, void***);
-#endif
 	zval *copyval;
 
 	MAKE_STD_ZVAL(copyval);
@@ -66,11 +63,7 @@ int php_runkit_sandbox_array_deep_copy(RUNKIT_53_TSRMLS_ARG(zval **value), int n
 	PHP_SANDBOX_CROSS_SCOPE_ZVAL_COPY_CTOR(copyval);
 
 	if (hash_key->nKeyLength) {
-#if PHP_MAJOR_VERSION >= 6
 		zend_u_hash_quick_update(target_hashtable, hash_key->type == HASH_KEY_IS_UNICODE ? IS_UNICODE : IS_STRING, hash_key->u.string, hash_key->nKeyLength, hash_key->h, &copyval, sizeof(zval*), NULL);
-#else
-		zend_hash_quick_update(target_hashtable, hash_key->arKey, hash_key->nKeyLength, hash_key->h, &copyval, sizeof(zval*), NULL);
-#endif
 	} else {
 		zend_hash_index_update(target_hashtable, hash_key->h, &copyval, sizeof(zval*), NULL);
 	}
@@ -228,10 +221,6 @@ newstr_ok: ;
 static inline void php_runkit_sandbox_ini_override(php_runkit_sandbox_object *objval, HashTable *options TSRMLS_DC)
 {
 	zend_bool allow_url_fopen;
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION < 4) || (PHP_MAJOR_VERSION < 5)
-	zend_bool safe_mode, safe_mode_gid;
-	HashTable *safe_mode_include_dirs = NULL;
-#endif
 #ifdef ZEND_ENGINE_2_2
 	zend_bool allow_url_include;
 #endif
@@ -243,13 +232,6 @@ static inline void php_runkit_sandbox_ini_override(php_runkit_sandbox_object *ob
 	{
 		/* Check current settings in parent context */
 		TSRMLS_FETCH_FROM_CTX(objval->parent_context);
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION < 4) || (PHP_MAJOR_VERSION < 5)
-		safe_mode = PG(safe_mode);
-		safe_mode_gid = PG(safe_mode_gid);
-		if (PG(safe_mode_include_dir) && *PG(safe_mode_include_dir)) {
-			safe_mode_include_dirs = php_runkit_sandbox_parse_multipath(PG(safe_mode_include_dir) TSRMLS_CC);
-		}
-#endif
 		if (PG(open_basedir) && *PG(open_basedir)) {
 			open_basedirs = php_runkit_sandbox_parse_multipath(PG(open_basedir) TSRMLS_CC);
 		}
@@ -260,62 +242,8 @@ static inline void php_runkit_sandbox_ini_override(php_runkit_sandbox_object *ob
 	}
 	tsrm_set_interpreter_context(objval->context);
 
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION < 4) || (PHP_MAJOR_VERSION < 5)
-	/* safe_mode only goes on */
-	if (!safe_mode &&
-		zend_hash_find(options, "safe_mode", sizeof("safe_mode"), (void*)&tmpzval) == SUCCESS) {
-		zval copyval = **tmpzval;
-
-		zval_copy_ctor(&copyval);
-		convert_to_boolean(&copyval);
-
-		if (Z_BVAL(copyval)) {
-			zend_alter_ini_entry("safe_mode", sizeof("safe_mode"), "1", 1, PHP_INI_SYSTEM, PHP_INI_STAGE_ACTIVATE);
-		}
-	}
-
-	/* safe_mode_gid only goes off */
-	if (safe_mode_gid &&
-		zend_hash_find(options, "safe_mode_gid", sizeof("safe_mode_gid"), (void*)&tmpzval) == SUCCESS) {
-		zval copyval = **tmpzval;
-
-		zval_copy_ctor(&copyval);
-		convert_to_boolean(&copyval);
-
-		if (!Z_BVAL(copyval)) {
-			zend_alter_ini_entry("safe_mode_gid", sizeof("safe_mode_gid"), "0", 1, PHP_INI_SYSTEM, PHP_INI_STAGE_ACTIVATE);
-		}
-	}
-
-	/* safe_mode_include_dir can go deeper, or be set to blank (which means nowhere is includable) */
-	if (zend_hash_find(options, "safe_mode_include_dir", sizeof("safe_mode_include_dir"), (void*)&tmpzval) == SUCCESS &&
-		Z_TYPE_PP(tmpzval) == IS_STRING) {
-
-		if (Z_STRLEN_PP(tmpzval) == 0) {
-			/* simplest case -- clearing safe_mode_include_dir -- maximum restriction */
-			zend_alter_ini_entry("safe_mode_include_dir", sizeof("safe_mode_include_dir"), NULL, 0, PHP_INI_SYSTEM, PHP_INI_STAGE_ACTIVATE);
-		} else if (!safe_mode_include_dirs && safe_mode) {
-			/* 2nd simplest case -- Full security already with safe_mode preexisting -- leave it alone */
-		} else if (!safe_mode_include_dirs) {
-			/* 3rd simplest case -- include_dir not yet set, but safe_mode not on yet, assume we're turning on */
-			zend_alter_ini_entry("safe_mode_include_dir", sizeof("safe_mode_include_dir"), Z_STRVAL_PP(tmpzval), Z_STRLEN_PP(tmpzval), PHP_INI_SYSTEM, PHP_INI_STAGE_ACTIVATE);
-		} else {
-			/* Otherwise... */
-			HashTable *new_include_dirs = php_runkit_sandbox_parse_multipath(Z_STRVAL_PP(tmpzval) TSRMLS_CC);
-			int new_include_dir_len = 0;
-			char *new_include_dir = php_runkit_sandbox_tighten_paths(safe_mode_include_dirs, new_include_dirs TSRMLS_CC);
-
-			if (new_include_dir) {
-				/* Tightening up of existing security level */
-				zend_alter_ini_entry("safe_mode_include_dir", sizeof("safe_mode_include_dir"), new_include_dir, new_include_dir_len, PHP_INI_SYSTEM, PHP_INI_STAGE_ACTIVATE);
-				efree(new_include_dir);
-			}
-			php_runkit_sandbox_free_multipath(new_include_dirs TSRMLS_CC);
-		}
-	}
-#endif
 	/* open_basedir goes deeper only */
-	if (zend_hash_find(options, "open_basedir", sizeof("open_basedir"), (void*)&tmpzval) == SUCCESS &&
+	if ((tmpzval = zend_hash_str_find(options, "open_basedir", sizeof("open_basedir"), (void*)&tmpzval)) != NULL &&
 		Z_TYPE_PP(tmpzval) == IS_STRING) {
 
 		if (!open_basedirs) {
@@ -344,7 +272,7 @@ child_open_basedir_set:
 
 	/* allow_url_fopen goes off only */
 	if (allow_url_fopen &&
-		zend_hash_find(options, "allow_url_fopen", sizeof("allow_url_fopen"), (void*)&tmpzval) == SUCCESS) {
+		(tmpzval = zend_hash_str_find(options, "allow_url_fopen", sizeof("allow_url_fopen"), (void*)&tmpzval)) != NULL) {
 		zval copyval = **tmpzval;
 
 		zval_copy_ctor(&copyval);
@@ -356,7 +284,7 @@ child_open_basedir_set:
 	}
 
 	/* Can only disable additional functions */
-	if (zend_hash_find(options, "disable_functions", sizeof("disable_functions"), (void*)&tmpzval) == SUCCESS &&
+	if ((tmpzval = zend_hash_str_find(options, "disable_functions", sizeof("disable_functions"), (void*)&tmpzval)) != NULL &&
 		Z_TYPE_PP(tmpzval) == IS_STRING) {
 		/* NOTE: disable_functions doesn't prevent $obj->function_name, it only blocks code inside $obj->eval() statements
 		 * This could be brought into consistency, but I actually think it's okay to leave those functions available to calling script
@@ -377,7 +305,7 @@ child_open_basedir_set:
 	}
 
 	/* Can only disable additional classes */
-	if (zend_hash_find(options, "disable_classes", sizeof("disable_classes"), (void*)&tmpzval) == SUCCESS &&
+	if ((tmpzval = zend_hash_str_find(options, "disable_classes", sizeof("disable_classes"), (void*)&tmpzval)) != NULL &&
 		Z_TYPE_PP(tmpzval) == IS_STRING) {
 		/* This buffer needs to be around when the error message occurs since the underlying implementation in Zend expects it to be */
 		int disable_classes_len = Z_STRLEN_PP(tmpzval);
@@ -395,7 +323,7 @@ child_open_basedir_set:
 	}
 
 	/* Additional superglobals to define */
-	if (zend_hash_find(options, "runkit.superglobal", sizeof("runkit.superglobal"), (void*)&tmpzval) == SUCCESS &&
+	if ((tmpzval = zend_hash_str_find(options, "runkit.superglobal", sizeof("runkit.superglobal"), (void*)&tmpzval)) != NULL &&
 		Z_TYPE_PP(tmpzval) == IS_STRING) {
 		char *p, *s = Z_STRVAL_PP(tmpzval);
 		int len;
@@ -403,33 +331,17 @@ child_open_basedir_set:
 		while ((p = strchr(s, ','))) {
 			if (p - s) {
 				*p = '\0';
-				zend_register_auto_global(s, p - s,
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION >= 6)
-							0,
-#endif
-							NULL TSRMLS_CC);
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION >= 6)
+				zend_register_auto_global(zend_string_init(s, p - s, 0), 0, NULL TSRMLS_CC);
 				zend_activate_auto_globals(TSRMLS_C);
-#else
-				zend_auto_global_disable_jit(s, p - s TSRMLS_CC);
-#endif
 				*p = ',';
 			}
 			s = p + 1;
 		}
-		len = strlen(s);
-		zend_register_auto_global(s, len,
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION >= 6)
-						0,
-#endif
-						NULL TSRMLS_CC);
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION < 4) || (PHP_MAJOR_VERSION < 5)
-		zend_auto_global_disable_jit(s, len TSRMLS_CC);
-#endif
+		zend_register_auto_global(zend_string_init(s, strlen(s), 0), 0, NULL TSRMLS_CC);
 	}
 
 	/* May only turn off */
-	if (zend_hash_find(options, "runkit.internal_override", sizeof("runkit.internal_override"), (void*)&tmpzval) == SUCCESS) {
+	if (zend_hash_str_find(options, "runkit.internal_override", sizeof("runkit.internal_override"), (void*)&tmpzval) == SUCCESS) {
 		zval copyval = **tmpzval;
 
 		zval_copy_ctor(&copyval);
@@ -443,24 +355,15 @@ child_open_basedir_set:
 #ifdef ZEND_ENGINE_2_2
 	/* May only turn off */
 	if (allow_url_include &&
-	    (zend_hash_find(options, "allow_url_include", sizeof("allow_url_include"), (void**)&tmpzval) == SUCCESS) &&
+	    ((tmpzval = zend_hash_str_find(options, "allow_url_include", sizeof("allow_url_include"), (void**)&tmpzval)) != NULL) &&
 	    !zend_is_true(*tmpzval)) {
 		zend_alter_ini_entry("allow_url_include", sizeof("allow_url_include"), "0", 1, PHP_INI_SYSTEM, PHP_INI_STAGE_ACTIVATE);
 	}
 #endif
 
-	if (
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION < 4) || (PHP_MAJOR_VERSION < 5)
-	    safe_mode_include_dirs ||
-#endif
-	    open_basedirs) {
+	if (open_basedirs) {
 		tsrm_set_interpreter_context(objval->parent_context);
-		{
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION < 4) || (PHP_MAJOR_VERSION < 5)
-			php_runkit_sandbox_free_multipath(safe_mode_include_dirs TSRMLS_CC);
-#endif
-			php_runkit_sandbox_free_multipath(open_basedirs TSRMLS_CC);
-		}
+    php_runkit_sandbox_free_multipath(open_basedirs TSRMLS_CC);
 		tsrm_set_interpreter_context(objval->context);
 	}
 }
@@ -806,9 +709,7 @@ PHP_METHOD(Runkit_Sandbox,die)
 /* {{{ php_runkit_sandbox_read_property
 	read_property handler */
 static zval *php_runkit_sandbox_read_property(zval *object, zval *member, int type
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 6)
 	, const zend_literal *key
-#endif
 	TSRMLS_DC)
 {
 	php_runkit_sandbox_object *objval = PHP_RUNKIT_SANDBOX_FETCHBOX(object);
@@ -827,7 +728,7 @@ static zval *php_runkit_sandbox_read_property(zval *object, zval *member, int ty
 		zend_try {
 			zval **value;
 
-			if (zend_hash_find(&EG(symbol_table), Z_STRVAL_P(member), Z_STRLEN_P(member) + 1, (void*)&value) == SUCCESS) {
+			if ((value = zend_hash_str_find(&EG(symbol_table), Z_STRVAL_P(member), Z_STRLEN_P(member) + 1, (void*)&value)) != NULL) {
 				retval = **value;
 				prop_found = 1;
 			}
@@ -848,9 +749,7 @@ static zval *php_runkit_sandbox_read_property(zval *object, zval *member, int ty
 /* {{{ php_runkit_sandbox_write_property
 	write_property handler */
 static void php_runkit_sandbox_write_property(zval *object, zval *member, zval *value
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 6)
 	, const zend_literal *key
-#endif
 	TSRMLS_DC)
 {
 	php_runkit_sandbox_object *objval = PHP_RUNKIT_SANDBOX_FETCHBOX(object);
@@ -886,9 +785,7 @@ static void php_runkit_sandbox_write_property(zval *object, zval *member, zval *
 /* {{{ php_runkit_sandbox_has_property
 	has_property handler */
 static int php_runkit_sandbox_has_property(zval *object, zval *member, int has_set_exists
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 5)
 	, const zend_literal *key
-#endif
 	TSRMLS_DC)
 {
 	php_runkit_sandbox_object* objval = PHP_RUNKIT_SANDBOX_FETCHBOX(object);
@@ -917,9 +814,7 @@ static int php_runkit_sandbox_has_property(zval *object, zval *member, int has_s
 /* {{{ php_runkit_sandbox_unset_property
 	unset_property handler */
 static void php_runkit_sandbox_unset_property(zval *object, zval *member
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 6)
 	, const zend_literal *key
-#endif
 	TSRMLS_DC)
 {
 	php_runkit_sandbox_object *objval;
@@ -1154,17 +1049,13 @@ static void php_runkit_sandbox_sapi_sapi_error(int type, const char *error_msg, 
  * Ignore headers when in a subrequest
  */
 static int php_runkit_sandbox_sapi_header_handler(sapi_header_struct *sapi_header,
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 3) || (PHP_MAJOR_VERSION >= 6)
                                                   sapi_header_op_enum op,
-#endif
                                                   sapi_headers_struct *sapi_headers TSRMLS_DC)
 {
 	if (!RUNKIT_G(current_sandbox)) {
 		/* Not in a sandbox use SAPI's actual handler */
 		return php_runkit_sandbox_original_sapi.header_handler(sapi_header,
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 3) || (PHP_MAJOR_VERSION >= 6)
                                                                op,
-#endif
                                                                sapi_headers TSRMLS_CC);
 	}
 
@@ -1250,21 +1141,14 @@ static void php_runkit_sandbox_sapi_register_server_variables(zval *track_vars_a
 /* {{{ php_runkit_sandbox_sapi_log_message
  */
 static void php_runkit_sandbox_sapi_log_message(char *message
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 6)
 	TSRMLS_DC
-#endif
 	)
 {
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION < 4) || (PHP_MAJOR_VERSION < 5)
-	TSRMLS_FETCH();
-#endif
 
 	if (!RUNKIT_G(current_sandbox)) {
 		/* Not in a sandbox use SAPI's actual handler */
 		php_runkit_sandbox_original_sapi.log_message(message
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 6)
 								TSRMLS_CC
-#endif
 			);
 		return;
 	}
@@ -1276,13 +1160,7 @@ static void php_runkit_sandbox_sapi_log_message(char *message
 
 /* {{{ php_runkit_sandbox_sapi_get_request_time
  */
-static
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 6)
-	double
-#else
-	time_t
-#endif
-	php_runkit_sandbox_sapi_get_request_time(TSRMLS_D)
+static double php_runkit_sandbox_sapi_get_request_time(TSRMLS_D)
 {
 	if (!RUNKIT_G(current_sandbox)) {
 		/* Not in a sandbox use SAPI's actual handler */

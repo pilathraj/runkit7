@@ -30,7 +30,7 @@ static inline zend_function* _php_runkit_get_method_prototype(zend_class_entry *
 	zend_function *proto = NULL;
 
 	while (pce) {
-		if (zend_hash_find(&pce->function_table, (char *) func_lower, func_len+1, (void*) &proto) != FAILURE) {
+		if ((proto = zend_hash_str_find(&pce->function_table, (char *) func_lower, func_len+1) != NULL) {
 			break;
 		}
 		pce = pce->parent;
@@ -64,9 +64,8 @@ int php_runkit_fetch_class_int(const char *classname, int classname_len, zend_cl
 		return FAILURE;
 	}
 
-	if (zend_hash_find(EG(class_table), classname_lower, classname_lower_len + 1, (void*)&ze) == FAILURE ||
-		!ze || !*ze) {
-		efree(classname_lower);
+	if ((ze = zend_hash_str_find(EG(class_table), lclass, classname_len + 1, (void*)&ze)) == NULL || !*ze) {
+		efree(lclass);
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Class %s not found", classname);
 		return FAILURE;
 	}
@@ -157,7 +156,7 @@ TSRMLS_DC)
 		return FAILURE;
 	}
 
-	if (zend_hash_find(ftable, fname_lower, fname_lower_len + 1, (void*)&fe) == FAILURE) {
+	if ((fe = zend_hash_str_find(ftable, fname_lower, fname_len + 1, (void*)&fe)) == NULL) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s::%s() not found", classname, fname);
 		efree(fname_lower);
 		return FAILURE;
@@ -200,8 +199,8 @@ int php_runkit_update_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce
 		return ZEND_HASH_APPLY_KEEP;
 	}
 
-	if (zend_hash_find(&ce->function_table, fname_lower, fname_lower_len + 1, (void*)&cfe) == SUCCESS) {
-		scope = php_runkit_locate_scope(ce, cfe, fname_lower, fname_lower_len);
+	if ((cfe = zend_hash_str_find(&ce->function_table, fname_lower, fname_len + 1, (void*)&cfe)) != NULL) {
+		scope = php_runkit_locate_scope(ce, cfe, fname_lower, fname_len);
 		if (scope != ancestor_class) {
 			/* This method was defined below our current level, leave it be */
 			cfe->common.prototype = _php_runkit_get_method_prototype(scope->parent, fname_lower, fname_lower_len TSRMLS_CC);
@@ -255,7 +254,7 @@ int php_runkit_clean_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce)
 		return ZEND_HASH_APPLY_KEEP;
 	}
 
-	if (zend_hash_find(&ce->function_table, fname_lower, fname_lower_len + 1, (void*)&cfe) == SUCCESS) {
+	if ((cfe = zend_hash_str_find(&ce->function_table, fname_lower, fname_lower_len + 1, (void*)&cfe)) != NULL) {
 		scope = php_runkit_locate_scope(ce, cfe, fname_lower, fname_lower_len);
 		if (scope != ancestor_class) {
 			/* This method was defined below our current level, leave it be */
@@ -407,9 +406,7 @@ static void php_runkit_method_add_or_update(INTERNAL_FUNCTION_PARAMETERS, int ad
 	}
 	php_runkit_modify_function_doc_comment(&func, doc_comment, doc_comment_len);
 
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 5)
 	php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
-#endif
 
 	if(orig_fe) {
 		php_runkit_remove_function_from_reflection_objects(orig_fe TSRMLS_CC);
@@ -431,8 +428,7 @@ static void php_runkit_method_add_or_update(INTERNAL_FUNCTION_PARAMETERS, int ad
 		RETURN_FALSE;
 	}
 
-	if (zend_hash_find(&ce->function_table, methodname_lower, methodname_lower_len + 1, (void*)&fe) == FAILURE ||
-		!fe) {
+	if ((fe = zend_hash_str_find(&ce->function_table, methodname_lower, methodname_lower_len + 1, (void*)&fe)) == NULL) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to locate newly added method");
 		efree(methodname_lower);
 		RETURN_FALSE;
@@ -483,9 +479,7 @@ static int php_runkit_method_copy(const char *dclass, int dclass_len, const char
 		} else {
 			php_runkit_remove_function_from_reflection_objects(fe TSRMLS_CC);
 			zend_hash_del(&dce->function_table, dfunc_lower, dfunc_lower_len + 1);
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 5)
 			php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
-#endif
 		}
 	}
 
@@ -569,9 +563,7 @@ PHP_FUNCTION(runkit_method_remove)
 
 	zend_hash_apply_with_arguments(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), (apply_func_args_t)php_runkit_clean_children_methods, 5, ancestor_class, ce, methodname_lower, methodname_lower_len, fe);
 
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 5)
 	php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
-#endif
 
 	php_runkit_remove_function_from_reflection_objects(fe TSRMLS_CC);
 
@@ -644,9 +636,7 @@ PHP_FUNCTION(runkit_method_rename)
 	zend_hash_apply_with_arguments(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), (apply_func_args_t)php_runkit_clean_children_methods, 5,
 				       ancestor_class, ce, methodname_lower, methodname_lower_len, fe);
 
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 5)
 	php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
-#endif
 
 	func = *fe;
 	php_runkit_function_copy_ctor(&func, newname, newname_len TSRMLS_CC);

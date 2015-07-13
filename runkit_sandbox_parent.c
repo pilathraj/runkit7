@@ -78,17 +78,13 @@ typedef struct _php_runkit_sandbox_parent_object {
 static HashTable *php_runkit_sandbox_parent_resolve_symbol_table(php_runkit_sandbox_parent_object *objval TSRMLS_DC)
 {
 	int i;
-#if (RUNKIT_ABOVE53)
 	HashTable *oldActiveSymbolTable, *result;
 	zend_execute_data *oldCurExData;
-#endif
 	zend_execute_data *ex = EG(current_execute_data);
 
-#if (RUNKIT_UNDER53 == 0)
 	if (!EG(active_symbol_table)) {
 		zend_rebuild_symbol_table(TSRMLS_C);
 	}
-#endif
 
 	if (objval->self->parent_scope <= 0) {
 		HashTable *ht = &EG(symbol_table);
@@ -96,7 +92,7 @@ static HashTable *php_runkit_sandbox_parent_resolve_symbol_table(php_runkit_sand
 		if (objval->self->parent_scope_name) {
 			zval **symtable;
 
-			if (zend_hash_find(ht, objval->self->parent_scope_name, objval->self->parent_scope_namelen + 1, (void*)&symtable) == SUCCESS) {
+			if ((symtable = zend_hash_str_find(ht, objval->self->parent_scope_name, objval->self->parent_scope_namelen + 1)) != NULL) {
 				if (Z_TYPE_PP(symtable) == IS_ARRAY) {
 					ht = Z_ARRVAL_PP(symtable);
 				} else {
@@ -107,7 +103,7 @@ static HashTable *php_runkit_sandbox_parent_resolve_symbol_table(php_runkit_sand
 					ALLOC_INIT_ZVAL(hidden);
 					array_init(hidden);
 					ht = Z_ARRVAL_P(hidden);
-					if ((*symtable)->RUNKIT_REFCOUNT > 1 &&
+					if (Z_REFCOUNT_PP(symtable) > 1 &&
 						!(*symtable)->RUNKIT_IS_REF) {
 						zval *cv;
 
@@ -119,7 +115,7 @@ static HashTable *php_runkit_sandbox_parent_resolve_symbol_table(php_runkit_sand
 						*symtable = cv;
 					}
 					(*symtable)->RUNKIT_IS_REF = 1;
-					(*symtable)->RUNKIT_REFCOUNT++;
+					(*symtable)->RUNKIT_REFCOUNT++;  // TODO fix
 					zend_hash_update(ht, objval->self->parent_scope_name, objval->self->parent_scope_namelen + 1, (void*)symtable, sizeof(zval*), NULL);
 
 					/* Store that dummy array in the sandbox's hidden properties table so that it gets cleaned up on dtor */
@@ -151,9 +147,6 @@ static HashTable *php_runkit_sandbox_parent_resolve_symbol_table(php_runkit_sand
 		ex = ex->prev_execute_data;
 	}
 
-#if (RUNKIT_UNDER53)
-	return ex->symbol_table ? ex->symbol_table : &EG(symbol_table);
-#else
 	oldActiveSymbolTable = EG(active_symbol_table);
 	EG(active_symbol_table) = NULL;
 	oldCurExData = EG(current_execute_data);
@@ -163,7 +156,6 @@ static HashTable *php_runkit_sandbox_parent_resolve_symbol_table(php_runkit_sand
 	EG(active_symbol_table) = oldActiveSymbolTable;
 	EG(current_execute_data) = oldCurExData;
 	return result;
-#endif
 }
 
 /* {{{ proto Runkit_Sandbox_Parent::__call(mixed function_name, array args)
@@ -448,9 +440,7 @@ PHP_METHOD(Runkit_Sandbox_Parent,die)
 /* {{{ php_runkit_sandbox_parent_read_property
 	read_property handler */
 static zval *php_runkit_sandbox_parent_read_property(zval *object, zval *member, int type
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 6)
 	, const zend_literal *key
-#endif
 	TSRMLS_DC)
 {
 	php_runkit_sandbox_parent_object *objval = PHP_RUNKIT_SANDBOX_PARENT_FETCHBOX(object);
@@ -471,7 +461,7 @@ static zval *php_runkit_sandbox_parent_read_property(zval *object, zval *member,
 	PHP_RUNKIT_SANDBOX_PARENT_BEGIN(objval)
 		zval **value;
 
-		if (zend_hash_find(php_runkit_sandbox_parent_resolve_symbol_table(objval TSRMLS_CC), Z_STRVAL_P(member), Z_STRLEN_P(member) + 1, (void*)&value) == SUCCESS) {
+		if ((value = zend_hash_str_find(php_runkit_sandbox_parent_resolve_symbol_table(objval TSRMLS_CC), Z_STRVAL_P(member), Z_STRLEN_P(member) + 1)) != NULL) {
 			retval = **value;
 			prop_found = 1;
 		}
@@ -488,9 +478,7 @@ static zval *php_runkit_sandbox_parent_read_property(zval *object, zval *member,
 /* {{{ php_runkit_sandbox_parent_write_property
 	write_property handler */
 static void php_runkit_sandbox_parent_write_property(zval *object, zval *member, zval *value
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 6)
 	, const zend_literal *key
-#endif
 	TSRMLS_DC)
 {
 	php_runkit_sandbox_parent_object *objval = PHP_RUNKIT_SANDBOX_PARENT_FETCHBOX(object);
@@ -524,9 +512,7 @@ static void php_runkit_sandbox_parent_write_property(zval *object, zval *member,
 /* {{{ php_runkit_sandbox_parent_has_property
 	has_property handler */
 static int php_runkit_sandbox_parent_has_property(zval *object, zval *member, int has_set_exists
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 5)
 	, const zend_literal *key
-#endif
 	TSRMLS_DC)
 {
 	php_runkit_sandbox_parent_object* objval = PHP_RUNKIT_SANDBOX_PARENT_FETCHBOX(object);
@@ -555,9 +541,7 @@ static int php_runkit_sandbox_parent_has_property(zval *object, zval *member, in
 /* {{{ php_runkit_sandbox_parent_unset_property
 	unset_property handler */
 static void php_runkit_sandbox_parent_unset_property(zval *object, zval *member
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 6)
 	, const zend_literal *key
-#endif
 	TSRMLS_DC)
 {
 	php_runkit_sandbox_parent_object *objval = PHP_RUNKIT_SANDBOX_PARENT_FETCHBOX(object);

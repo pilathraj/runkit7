@@ -33,10 +33,7 @@
 #include "php_ini.h"
 #include "ext/standard/info.h"
 #include "ext/standard/php_string.h"
-
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 3) || (PHP_MAJOR_VERSION >= 6)
 #include "Zend/zend_closures.h"
-#endif
 
 #include "Zend/zend_interfaces.h"
 
@@ -64,7 +61,7 @@
 /* The TSRM interpreter patch required by runkit_sandbox was added in 5.1, but this package includes diffs for older versions
  * Those diffs include an additional #define to indicate that they've been applied
  */
-#if (defined(ZTS) && (PHP_MAJOR_VERSION > 5 || (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION > 0) || defined(TSRM_INTERPRETER_PATCH_APPLIED))) && defined(PHP_RUNKIT_FEATURE_SANDBOX)
+#if defined(ZTS) && defined(PHP_RUNKIT_FEATURE_SANDBOX)
 #define PHP_RUNKIT_SANDBOX
 #endif
 
@@ -152,28 +149,11 @@ extern ZEND_DECLARE_MODULE_GLOBALS(runkit);
 #define RUNKIT_TSRMLS_C		NULL
 #endif
 
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 3) || (PHP_MAJOR_VERSION >= 6)
-#     define RUNKIT_REFCOUNT  refcount__gc
-#     define RUNKIT_IS_REF    is_ref__gc
-#     define RUNKIT_IS_CALLABLE(cb_zv, flags, cb_sp) zend_is_callable((cb_zv), (flags), (cb_sp) TSRMLS_CC)
-#     define RUNKIT_FILE_HANDLE_DTOR(pHandle)        zend_file_handle_dtor((pHandle) TSRMLS_CC)
-#     define RUNKIT_53_TSRMLS_PARAM(param)           (param) TSRMLS_CC
-#     define RUNKIT_53_TSRMLS_ARG(arg)               arg TSRMLS_DC
-#     define RUNKIT_UNDER53_TSRMLS_FETCH()
-#     define RUNKIT_UNDER53                          0
-#     define RUNKIT_ABOVE53                          1
-#else
-#     define RUNKIT_REFCOUNT  refcount
-#     define RUNKIT_IS_REF    is_ref
-#     define RUNKIT_IS_CALLABLE(cb_zv, flags, cb_sp) zend_is_callable((cb_zv), (flags), (cb_sp))
-#     define RUNKIT_FILE_HANDLE_DTOR(pHandle)        zend_file_handle_dtor((pHandle))
-#     define RUNKIT_53_TSRMLS_PARAM(param)           (param)
-#     define RUNKIT_53_TSRMLS_ARG(arg)               arg
-#     define RUNKIT_UNDER53_TSRMLS_FETCH()           TSRMLS_FETCH()
-#     define RUNKIT_UNDER53                          1
-#     define RUNKIT_ABOVE53                          0
-#     define zend_hash_quick_del(ht, key, key_len, h) zend_hash_del(ht, key, key_len)
-#endif
+#define RUNKIT_IS_CALLABLE(cb_zv, flags, cb_sp) zend_is_callable((cb_zv), (flags), (cb_sp) TSRMLS_CC)
+#define RUNKIT_FILE_HANDLE_DTOR(pHandle)        zend_file_handle_dtor((pHandle) TSRMLS_CC)
+#define RUNKIT_53_TSRMLS_PARAM(param)           (param) TSRMLS_CC
+#define RUNKIT_53_TSRMLS_ARG(arg)               arg TSRMLS_DC
+#define RUNKIT_UNDER53_TSRMLS_FETCH()
 
 #if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 6) || (PHP_MAJOR_VERSION >= 6)
 #     define RUNKIT_ABOVE56                          1
@@ -217,16 +197,14 @@ extern ZEND_DECLARE_MODULE_GLOBALS(runkit);
 /* runkit_functions.c */
 #define RUNKIT_TEMP_FUNCNAME  "__runkit_temporary_function__"
 int php_runkit_check_call_stack(zend_op_array *op_array TSRMLS_DC);
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 5)
 void php_runkit_clear_all_functions_runtime_cache(TSRMLS_D);
-#endif
 
 void php_runkit_remove_function_from_reflection_objects(zend_function *fe TSRMLS_DC);
 void php_runkit_function_copy_ctor(zend_function *fe, const char *newname, int newname_len TSRMLS_DC);
 int php_runkit_generate_lambda_method(const char *arguments, int arguments_len, const char *phpcode, int phpcode_len,
                                       zend_function **pfe, zend_bool return_ref TSRMLS_DC);
-int php_runkit_destroy_misplaced_functions(void *pDest TSRMLS_DC);
-int php_runkit_restore_internal_functions(RUNKIT_53_TSRMLS_ARG(void *pDest), int num_args, va_list args, zend_hash_key *hash_key);
+int php_runkit_destroy_misplaced_functions(zval *pDest TSRMLS_DC);
+int php_runkit_restore_internal_functions(RUNKIT_53_TSRMLS_ARG(zval *pDest), int num_args, va_list args, zend_hash_key *hash_key);
 int php_runkit_clean_zval(zval **val TSRMLS_DC);
 
 /* runkit_methods.c */
@@ -236,7 +214,6 @@ int php_runkit_clean_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce)
 int php_runkit_update_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), int num_args, va_list args, zend_hash_key *hash_key);
 int php_runkit_fetch_interface(const char *classname, int classname_len, zend_class_entry **pce TSRMLS_DC);
 
-#if PHP_MAJOR_VERSION >= 6
 #define PHP_RUNKIT_FUNCTION_ADD_REF(f)	function_add_ref(f TSRMLS_CC)
 #define php_runkit_locate_scope(ce, fe, methodname_lower, methodname_len)   fe->common.scope
 #define PHP_RUNKIT_DECL_STRING_PARAM(param)		void *param = NULL; int32_t param##_len = 0; zend_uchar param##_type;
@@ -249,20 +226,6 @@ int php_runkit_fetch_interface(const char *classname, int classname_len, zend_cl
 #define PHP_RUNKIT_HASH_EXISTS(hash,param)		zend_u_hash_exists(hash, param##_type, (UChar *)param, param##_len + 1)
 #define PHP_RUNKIT_HASH_KEY(hash_key)			((hash_key)->type == HASH_KEY_IS_UNICODE ? (hash_key)->u.unicode : (hash_key)->u.string)
 #define PHP_RUNKIT_HASH_KEYLEN(hash_key)		((hash_key)->type == HASH_KEY_IS_UNICODE ? UBYTES((hash_key)->nKeyLength) : (hash_key)->nKeyLength)
-#else
-#define PHP_RUNKIT_FUNCTION_ADD_REF(f)	function_add_ref(f)
-#define php_runkit_locate_scope(ce, fe, methodname_lower, methodname_len)   fe->common.scope
-#define PHP_RUNKIT_DECL_STRING_PARAM(p)			char *p = NULL; int p##_len = 0;
-#define PHP_RUNKIT_STRING_SPEC				"s"
-#define PHP_RUNKIT_STRING_PARAM(p)			&p, &p##_len
-#define PHP_RUNKIT_STRTOLOWER(p)			php_strtolower(p, p##_len)
-#define PHP_RUNKIT_STRING_LEN(param,addtl)		(param##_len + (addtl))
-#define PHP_RUNKIT_STRING_TYPE(param)			IS_STRING
-#define PHP_RUNKIT_HASH_FIND(hash,param,ppvar)		zend_hash_find(hash, param, param##_len + 1, (void*)ppvar)
-#define PHP_RUNKIT_HASH_EXISTS(hash,param)		zend_hash_exists(hash, param##_type, param, param##_len + 1)
-#define PHP_RUNKIT_HASH_KEY(hash_key)			((hash_key)->arKey)
-#define PHP_RUNKIT_HASH_KEYLEN(hash_key)		((hash_key)->nKeyLength)
-#endif /* Version Agnosticism */
 
 #define PHP_RUNKIT_MAKE_LOWERCASE_COPY(name) \
 	name##_lower = estrndup(name, name##_len); \
@@ -400,8 +363,10 @@ struct _php_runkit_sandbox_object {
 		default: \
 			zval_copy_ctor(pzv); \
 	} \
-	(pzv)->RUNKIT_REFCOUNT = 1; \
-	(pzv)->RUNKIT_IS_REF = 0; \
+	if (Z_REFCOUNTED_P(pzf)) \
+		Z_SET_REFCOUNT(pzv, 1); \
+		/*(pzv)->RUNKIT_IS_REF = 0; // I think I can get rid of that, since IS_REFERENCE is now part of Z_TYPE?*/ \
+	} \
 }
 #endif /* PHP_RUNKIT_SANDBOX */
 
@@ -443,14 +408,10 @@ inline static void PHP_RUNKIT_ADD_MAGIC_METHOD(zend_class_entry *ce, char *lcmna
 	} else if (!strncmp((lcmname), ZEND_CALLSTATIC_FUNC_NAME, (mname_len))) {
 		(ce)->__callstatic = (fe);
 #endif
-#if PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 2 || PHP_MAJOR_VERSION > 5
 	} else if (!strncmp((lcmname), ZEND_TOSTRING_FUNC_NAME, (mname_len))) {
 		(ce)->__tostring = (fe);
-#endif
-#if RUNKIT_ABOVE56
 	} else if (!strncmp((lcmname), ZEND_DEBUGINFO_FUNC_NAME, (mname_len))) {
 		(ce)->__debugInfo = (fe);
-#endif
 	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) && !strncmp((lcmname), "serialize", (mname_len))) {
 		(ce)->serialize_func = (fe);
 	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) && !strncmp((lcmname), "unserialize", (mname_len))) {
@@ -503,24 +464,18 @@ inline static void PHP_RUNKIT_INHERIT_MAGIC(zend_class_entry *ce, const zend_fun
 		(ce)->__isset      = (ce)->parent->__isset;
 	} else if ((ce)->__call       == (orig_fe) && (ce)->parent->__call == (fe)) {
 		(ce)->__call       = (ce)->parent->__call;
-#if RUNKIT_ABOVE53
 	} else if ((ce)->__callstatic == (orig_fe) && (ce)->parent->__callstatic == (fe)) {
 		(ce)->__callstatic = (ce)->parent->__callstatic;
-#endif
-#if PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 2 || PHP_MAJOR_VERSION > 5
 	} else if ((ce)->__tostring == (orig_fe) && (ce)->parent->__tostring == (fe)) {
 		(ce)->__tostring   = (ce)->parent->__tostring;
-#endif
 	} else if ((ce)->clone        == (orig_fe) && (ce)->parent->clone == (fe)) {
 		(ce)->clone        = (ce)->parent->clone;
 	} else if ((ce)->destructor   == (orig_fe) && (ce)->parent->destructor == (fe)) {
 		(ce)->destructor   = (ce)->parent->destructor;
 	} else if ((ce)->constructor  == (orig_fe) && (ce)->parent->constructor == (fe)) {
 		(ce)->constructor  = (ce)->parent->constructor;
-#if RUNKIT_ABOVE56
 	} else if ((ce)->__debugInfo  == (orig_fe) && (ce)->parent->__debugInfo == (fe)) {
 		(ce)->__debugInfo  = (ce)->parent->__debugInfo;
-#endif
 	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) &&
 		   (ce)->serialize_func == (orig_fe) && (ce)->parent->serialize_func == (fe)) {
 		(ce)->serialize_func = (ce)->parent->serialize_func;
@@ -588,56 +543,31 @@ inline static zend_bool php_runkit_parse_function_arg(int argc, zval ***args, in
 
 #	define PHP_RUNKIT_DESTROY_FUNCTION(fe) 	destroy_zend_function(fe TSRMLS_CC);
 
-#	if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 5)
-#		define PHP_RUNKIT_UPDATE_REFLECTION_OBJECT_NAME(object, handle, name) { \
-			zval obj, *zvname, *zvnew_name; \
-			INIT_ZVAL(obj); \
-			Z_TYPE(obj) = IS_OBJECT; \
-			Z_OBJ_HANDLE(obj) = (handle); \
-			obj.RUNKIT_REFCOUNT = 1; \
-			obj.RUNKIT_IS_REF = 1; \
-			MAKE_STD_ZVAL(zvname); \
-			ZVAL_STRING(zvname, RUNKIT_G(name_str), 1); \
-			MAKE_STD_ZVAL(zvnew_name); \
-			ZVAL_STRING(zvnew_name, (name), 1); \
-			zend_std_write_property(&obj, zvname, zvnew_name, NULL TSRMLS_CC); \
-			zval_ptr_dtor(&zvnew_name); \
-			zval_ptr_dtor(&zvname); \
-		}
-#	else
-#		define PHP_RUNKIT_UPDATE_REFLECTION_OBJECT_NAME(object, handle, name) { \
-			zval obj, *zvname, *zvnew_name; \
-			INIT_ZVAL(obj); \
-			Z_TYPE(obj) = IS_OBJECT; \
-			Z_OBJ_HANDLE(obj) = (handle); \
-			obj.RUNKIT_REFCOUNT = 1; \
-			obj.RUNKIT_IS_REF = 1; \
-			MAKE_STD_ZVAL(zvname); \
-			ZVAL_STRING(zvname, (char *) RUNKIT_G(name_str), 1); \
-			MAKE_STD_ZVAL(zvnew_name); \
-			ZVAL_STRING(zvnew_name, (char *) (name), 1); \
-			zend_get_std_object_handlers()->write_property(&obj, zvname, zvnew_name TSRMLS_CC); \
-			zval_ptr_dtor(&zvnew_name); \
-			zval_ptr_dtor(&zvname); \
-		}
-#	endif
+#	define PHP_RUNKIT_UPDATE_REFLECTION_OBJECT_NAME(object, handle, name) { \
+		zval obj, *zvname, *zvnew_name; \
+		INIT_ZVAL(obj); \
+		Z_TYPE(obj) = IS_OBJECT; \
+		Z_OBJ_HANDLE(obj) = (handle); \
+		Z_SET_REFCOUNT(obj, 1); \
+		/* TODO: This is definitely wrong. */ \
+		obj.RUNKIT_IS_REF = 1; \
+		MAKE_STD_ZVAL(zvname); \
+		ZVAL_STRING(zvname, RUNKIT_G(name_str), 1); \
+		MAKE_STD_ZVAL(zvnew_name); \
+		ZVAL_STRING(zvnew_name, (name), 1); \
+		zend_std_write_property(&obj, zvname, zvnew_name, NULL TSRMLS_CC); \
+		zval_ptr_dtor(&zvnew_name); \
+		zval_ptr_dtor(&zvname); \
+	}
 
-#	if RUNKIT_ABOVE53
-#		define PHP_RUNKIT_DELETE_REFLECTION_FUNCTION_PTR(obj) { \
-			if ((obj)->ptr \
-			    && ((zend_function *)(obj)->ptr)->type == ZEND_INTERNAL_FUNCTION \
-			    && (((zend_function *)(obj)->ptr)->internal_function.fn_flags & ZEND_ACC_CALL_VIA_HANDLER) != 0) { \
-				efree((char*)((zend_function *)(obj)->ptr)->internal_function.function_name); \
-				efree((obj)->ptr); \
-			} \
-		}
-#	else
-#		define PHP_RUNKIT_DELETE_REFLECTION_FUNCTION_PTR(obj) { \
-			if ((obj)->free_ptr && (obj)->ptr) { \
-				efree((obj)->ptr); \
-			} \
-		}
-#	endif
+#	define PHP_RUNKIT_DELETE_REFLECTION_FUNCTION_PTR(obj) { \
+		if ((obj)->ptr \
+			&& ((zend_function *)(obj)->ptr)->type == ZEND_INTERNAL_FUNCTION \
+			&& (((zend_function *)(obj)->ptr)->internal_function.fn_flags & ZEND_ACC_CALL_VIA_HANDLER) != 0) { \
+			efree((char*)((zend_function *)(obj)->ptr)->internal_function.function_name); \
+			efree((obj)->ptr); \
+		} \
+	}
 
 	/* Struct for properties */
 	typedef struct _property_reference {
@@ -647,8 +577,8 @@ inline static zend_bool php_runkit_parse_function_arg(int argc, zval ***args, in
 
 	/* Struct for parameters */
 	typedef struct _parameter_reference {
-		zend_uint offset;
-		zend_uint required;
+		uint32_t offset;
+		uint32_t required;
 		struct _zend_arg_info *arg_info;
 		zend_function *fptr;
 	} parameter_reference;
@@ -665,16 +595,10 @@ inline static zend_bool php_runkit_parse_function_arg(int argc, zval ***args, in
 	typedef struct {
 		zend_object zo;
 		void *ptr;
-#if RUNKIT_ABOVE53
 		reflection_type_t ref_type;
-#else
-		unsigned int free_ptr:1;
-#endif
 		zval *obj;
 		zend_class_entry *ce;
-#if RUNKIT_ABOVE53
 		unsigned int ignore_visibility:1;
-#endif
 	} reflection_object;
 #endif /* PHP_RUNKIT_MANIPULATION */
 

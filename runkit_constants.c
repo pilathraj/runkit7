@@ -51,7 +51,7 @@ static int php_runkit_fetch_const(char *cname, int cname_len, zend_constant **co
 		cname = lcase;
 	}
 #endif
-	if (zend_hash_find(EG(zend_constants), cname, cname_len + 1, (void*)constant) == FAILURE) {
+	if ((*constant = zend_hash_str_find(EG(zend_constants), cname, cname_len + 1, (void*)constant)) == NULL) {
 		if (!lcase) {
 			lcase = estrndup(cname, cname_len);
 			zend_str_tolower(lcase, cname_len);
@@ -59,7 +59,7 @@ static int php_runkit_fetch_const(char *cname, int cname_len, zend_constant **co
 			zend_str_tolower(lcase + cname_len - constant_name_len, constant_name_len);
 		}
 		cname = lcase;
-		if (zend_hash_find(EG(zend_constants), cname, cname_len + 1, (void*)constant) == FAILURE || ((*constant)->flags & CONST_CS)) {
+		if ((*constant = zend_hash_str_find(EG(zend_constants), cname, cname_len + 1, (void*)constant)) == NULL || ((*constant)->flags & CONST_CS)) {
 			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Constant %s not found", old_cname);
 			efree(lcase);
 			return FAILURE;
@@ -128,9 +128,7 @@ static int php_runkit_constant_remove(char *classname, int classname_len, char *
 			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to remove constant %s::%s", classname, constname);
 			return FAILURE;
 		}
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 5)
 		php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
-#endif
 		return SUCCESS;
 	}
 
@@ -150,9 +148,7 @@ static int php_runkit_constant_remove(char *classname, int classname_len, char *
 	}
 	efree(found_constname);
 
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 5)
 	php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
-#endif
 
 	return SUCCESS;
 }
@@ -211,9 +207,7 @@ static int php_runkit_constant_add(char *classname, int classname_len, char *con
 		return FAILURE;
 	}
 
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION > 5)
 	php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
-#endif
 
 	zend_hash_apply_with_arguments(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), (apply_func_args_t)php_runkit_update_children_consts, 4, ce, &copyval, constname, constname_len);
 

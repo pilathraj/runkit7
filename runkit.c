@@ -30,17 +30,16 @@ ZEND_DECLARE_MODULE_GLOBALS(runkit)
 PHP_FUNCTION(runkit_superglobals)
 {
 	HashPosition pos;
-	char *sg;
-	uint sg_len;
+	zend_string* sg;
 	int type;
 	ulong idx;
 
 	array_init(return_value);
 	for(zend_hash_internal_pointer_reset_ex(CG(auto_globals), &pos);
-		(type = zend_hash_get_current_key_ex(CG(auto_globals), &sg, &sg_len, &idx, 0, &pos)) != HASH_KEY_NON_EXISTANT;
+		(type = zend_hash_get_current_key_ex(CG(auto_globals), &sg, &idx, &pos)) != HASH_KEY_NON_EXISTENT;
 		zend_hash_move_forward_ex(CG(auto_globals), &pos)) {
 		if (type == HASH_KEY_IS_STRING) {
-			add_next_index_stringl(return_value, sg, sg_len - 1, 1);
+			add_next_index_stringl(return_value, ZSTR_VAL(sg), ZSTR_LEN(sg) - 1);
 		}
 	}
 }
@@ -62,12 +61,14 @@ PHP_FUNCTION(runkit_zval_inspect)
 	array_init(return_value);
 
 	addr_len = spprintf(&addr, 0, "0x%0lx", (long)value);
-	add_assoc_stringl(return_value, "address", addr, addr_len, 0);
+	add_assoc_stringl(return_value, "address", addr, addr_len);
 
-	add_assoc_long(return_value, "refcount", value->RUNKIT_REFCOUNT);
-	add_assoc_bool(return_value, "is_ref", value->RUNKIT_IS_REF);
+	if (Z_REFCOUNTED_P(value)) {
+		add_assoc_long(return_value, "refcount", Z_REFCOUNT_P(value));
+		add_assoc_bool(return_value, "is_ref", Z_ISREF_P(value));
+	}
 
-	add_assoc_long(return_value, "type", value->type);
+	add_assoc_long(return_value, "type", Z_TYPE_P(value));
 }
 /* }}} */
 
@@ -170,25 +171,17 @@ ZEND_FUNCTION(_php_runkit_removed_method) {
 	php_error_docref(NULL TSRMLS_CC, E_ERROR, "A method removed by runkit was somehow invoked");
 }
 
-static inline void _php_runkit_init_stub_function(char *name, void (*handler)(INTERNAL_FUNCTION_PARAMETERS), zend_function **result) {
+static inline void _php_runkit_init_stub_function(const char *name, void (*handler)(INTERNAL_FUNCTION_PARAMETERS), zend_function **result) {
 	*result = pemalloc(sizeof(zend_function), 1);
-	(*result)->common.function_name = name;
+	(*result)->common.function_name = zend_string_init(name, strlen(name), 0);  // TODO: Can this be persistent?
 	(*result)->common.scope = NULL;
 	(*result)->common.arg_info = NULL;
 	(*result)->common.num_args = 0;
 	(*result)->common.type = ZEND_INTERNAL_FUNCTION;
 	(*result)->common.fn_flags = ZEND_ACC_PUBLIC | ZEND_ACC_STATIC;
 	(*result)->common.arg_info = NULL;
-#if PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION < 4
-	(*result)->common.pass_rest_by_reference = 0;
-#endif
 	(*result)->internal_function.handler = handler;
-#if PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION < 4
-	(*result)->internal_function.return_reference = 0;
-#endif
-#if PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 2 || PHP_MAJOR_VERSION > 5
 	(*result)->internal_function.module = &runkit_module_entry;
-#endif
 }
 #endif
 
@@ -225,8 +218,7 @@ static void _php_runkit_feature_constant(const char *name, size_t name_len, zend
 
 	ZVAL_BOOL(&(c.value), enabled);
 	c.flags = flags;
-	c.name = zend_strndup(name, name_len - 1);
-	c.name_len = name_len;
+	c.name = zend_string_init(name, name_len - 1, 0);  // TODO: can this be persistent?
 	c.module_number = module_number;
 	zend_register_constant(&c TSRMLS_CC);
 }
@@ -325,38 +317,34 @@ PHP_MSHUTDOWN_FUNCTION(runkit)
 	Register an autoglobal only if it's not already registered */
 static void php_runkit_register_auto_global(char *s, int len TSRMLS_DC)
 {
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION >= 6)
 	zend_auto_global *auto_global;
-#endif
 
-	if (zend_hash_exists(CG(auto_globals), s, len + 1)) {
+	if (zend_hash_str_exists(CG(auto_globals), s, len + 1)) {
 		/* Registered already */
 		return;
 	}
 
-	if (zend_register_auto_global(s, len,
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION >= 6)
+	zend_string* globalName = zend_string_init(s, len, 0);
+	if (zend_register_auto_global(globalName,
 			0,
-#endif
 		    NULL TSRMLS_CC) == SUCCESS) {
 
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4) || (PHP_MAJOR_VERSION >= 6)
-		if (zend_hash_find(CG(auto_globals), s, len + 1, (void *) &auto_global) != SUCCESS) {
+		// TODO: How do I get an auto global out of a zend_hash????
+		if ((auto_global = zend_hash_find_ptr(CG(auto_globals), globalName)) == NULL) {
 			php_error_docref(NULL TSRMLS_CC, E_ERROR, "Cannot locate the newly created autoglobal");
 			return;
 		}
 		auto_global->armed = 0;
-#else
-		/* This shouldn't be necessary, but it is */
-		zend_auto_global_disable_jit(s, len TSRMLS_CC);
-
-#endif
 
 		if (!RUNKIT_G(superglobals)) {
 			ALLOC_HASHTABLE(RUNKIT_G(superglobals));
 			zend_hash_init(RUNKIT_G(superglobals), 2, NULL, NULL, 0);
 		}
-		zend_hash_next_index_insert(RUNKIT_G(superglobals), s, len + 1, NULL);
+		zval z;
+		// TODO: destructor calls?
+		ZVAL_NEW_STR(&z, globalName);
+		// This seems like it was a bug in the original function? They tried to insert a raw string?
+		zend_hash_next_index_insert(RUNKIT_G(superglobals), &z);
 	}
 }
 /* }}} */
@@ -411,10 +399,10 @@ no_superglobals_defined:
 
 #ifdef PHP_RUNKIT_SUPERGLOBALS
 /* {{{ php_runkit_superglobal_dtor */
-static int php_runkit_superglobal_dtor(void *pDest TSRMLS_DC)
+static int php_runkit_superglobal_dtor(zval *zv TSRMLS_DC)
 {
-	char *sName = (char *) pDest;
-	zend_hash_del(CG(auto_globals), sName, strlen(sName) + 1);
+	// TODO: check types.
+	zend_hash_del(CG(auto_globals), Z_STR_P(zv));
 
 	return ZEND_HASH_APPLY_REMOVE;
 }
