@@ -26,6 +26,7 @@
 #include "config.h"
 #endif
 
+
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   #include "php.h"
 #pragma GCC diagnostic error "-Wdeprecated-declarations"
@@ -37,6 +38,22 @@
 
 #include "Zend/zend_interfaces.h"
 
+// #define debug_printf(...) printf(__VA_ARGS__)
+#define debug_printf(...) do { } while(0)
+static inline void* _debug_emalloc(void* data, int bytes, char* file, int line) {
+	debug_printf("%llx: Wrapped emalloc %d bytes, %s:%d\n", (long long) data, bytes, file, line);
+	return data;
+}
+// #undef emalloc
+// #define emalloc(size) _debug_emalloc(_emalloc((size) ZEND_FILE_LINE_CC ZEND_FILE_LINE_EMPTY_CC), (size), __FILE__, __LINE__)
+// #define zend_string_release(s) do{ debug_printf("%llx: Pretending to zend_string_release %s\n", (long long) (s), ZSTR_VAL((s)));} while(0)
+
+// I've confirmed that this was freeing something that it shouldn't have.
+// This was causing things to crash afterwards.
+// #undef efree
+// #undef pefree
+// #define efree(m) do {debug_printf("%llx: efree at %s:%d\n", (long long) (m), __FILE__, __LINE__); _efree((m) ZEND_FILE_LINE_CC ZEND_FILE_LINE_EMPTY_CC); } while(0)
+// #define pefree(m, persistent) do {if ((persistent)) {debug_printf("%llx: (pe)free at %s:%d\n", (long long) (m), __FILE__, __LINE__); free((m));} else { efree(m); }} while(0)
 #define PHP_RUNKIT_VERSION					"1.0.4-dev"
 #define PHP_RUNKIT_SANDBOX_CLASSNAME		"Runkit_Sandbox"
 #define PHP_RUNKIT_SANDBOX_PARENT_CLASSNAME	"Runkit_Sandbox_Parent"
@@ -69,6 +86,11 @@
 
 #ifdef PHP_RUNKIT_FEATURE_MODIFY
 #define PHP_RUNKIT_MANIPULATION
+// TODO: Enable these macros once the corresponding functions/files compile and pass some of the tests.
+// TODO: Clean up these macros once the corresponding functions/files are 100% correct.
+// #define PHP_RUNKIT_MANIPULATION_IMPORT
+// #define PHP_RUNKIT_MANIPULATION_CONSTANTS
+// #define PHP_RUNKIT_MANIPULATION_PROPERTIES
 #endif
 
 #ifdef PHP_RUNKIT_MANIPULATION
@@ -98,14 +120,20 @@ PHP_FUNCTION(runkit_method_redefine);
 PHP_FUNCTION(runkit_method_remove);
 PHP_FUNCTION(runkit_method_rename);
 PHP_FUNCTION(runkit_method_copy);
+#ifdef PHP_RUNKIT_MANIPULATION_CONSTANTS
 PHP_FUNCTION(runkit_constant_redefine);
 PHP_FUNCTION(runkit_constant_remove);
 PHP_FUNCTION(runkit_constant_add);
+#endif
+#ifdef PHP_RUNKIT_MANIPULATION_PROPERTIES
 PHP_FUNCTION(runkit_default_property_add);
 PHP_FUNCTION(runkit_default_property_remove);
 PHP_FUNCTION(runkit_class_emancipate);
 PHP_FUNCTION(runkit_class_adopt);
+#endif
+#ifdef PHP_RUNKIT_MANIPULATION_IMPORT
 PHP_FUNCTION(runkit_import);
+#endif /* PHP_RUNKIT_MANIPULATION_IMPORT */
 #endif /* PHP_RUNKIT_MANIPULATION */
 
 #ifdef PHP_RUNKIT_SANDBOX
@@ -153,13 +181,8 @@ extern ZEND_DECLARE_MODULE_GLOBALS(runkit);
 #define RUNKIT_FILE_HANDLE_DTOR(pHandle)        zend_file_handle_dtor((pHandle) TSRMLS_CC)
 #define RUNKIT_53_TSRMLS_PARAM(param)           (param) TSRMLS_CC
 #define RUNKIT_53_TSRMLS_ARG(arg)               arg TSRMLS_DC
-#define RUNKIT_UNDER53_TSRMLS_FETCH()
 
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 6) || (PHP_MAJOR_VERSION >= 6)
-#     define RUNKIT_ABOVE56                          1
-#else
-#     define RUNKIT_ABOVE56                          0
-#endif
+#define RUNKIT_ABOVE56                          1
 
 #ifdef ZEND_ACC_RETURN_REFERENCE
 #     define PHP_RUNKIT_ACC_RETURN_REFERENCE         ZEND_ACC_RETURN_REFERENCE
@@ -175,9 +198,21 @@ extern ZEND_DECLARE_MODULE_GLOBALS(runkit);
 #ifdef PHP_RUNKIT_MANIPULATION
 #if !defined(zend_hash_add_or_update)
 /* Why doesn't ZE2 define this? */
-#define zend_hash_add_or_update(ht, arKey, nKeyLength, pData, pDataSize, pDest, flag) \
-        _zend_hash_add_or_update((ht), (arKey), (nKeyLength), (pData), (pDataSize), (pDest), (flag) ZEND_FILE_LINE_CC)
+#define zend_hash_add_or_update(ht, key, data, mode) \
+        _zend_hash_add_or_update((ht), (key), (data), (mode) ZEND_FILE_LINE_CC)
 #endif
+// Similar to zend_hash.h zend_hash_add_ptr
+static inline void *runkit_zend_hash_add_or_update_ptr(HashTable *ht, zend_string *key, void *pData, uint32_t flag) {
+	zval tmp, *zv;
+	ZVAL_PTR(&tmp, pData);
+	zv = zend_hash_add_or_update(ht, key, &tmp, flag);
+	if (zv) {
+		ZEND_ASSUME(Z_PTR_P(zv));
+		return Z_PTR_P(zv);
+	} else {
+		return NULL;
+	}
+}
 
 #ifndef Z_ADDREF_P
 #     define Z_ADDREF_P(x)                           ZVAL_ADDREF(x)
@@ -187,11 +222,7 @@ extern ZEND_DECLARE_MODULE_GLOBALS(runkit);
 #define IS_CONSTANT_AST IS_CONSTANT_ARRAY
 #endif
 
-#if PHP_VERSION_ID < 50600
-#define PHP_RUNKIT_CONSTANT_INDEX(a) (void*) a
-#else
 #define PHP_RUNKIT_CONSTANT_INDEX(a) a
-#endif
 
 
 /* runkit_functions.c */
@@ -200,54 +231,46 @@ int php_runkit_check_call_stack(zend_op_array *op_array TSRMLS_DC);
 void php_runkit_clear_all_functions_runtime_cache(TSRMLS_D);
 
 void php_runkit_remove_function_from_reflection_objects(zend_function *fe TSRMLS_DC);
-void php_runkit_function_copy_ctor(zend_function *fe, const char *newname, int newname_len TSRMLS_DC);
-int php_runkit_generate_lambda_method(const char *arguments, int arguments_len, const char *phpcode, int phpcode_len,
+void php_runkit_function_copy_ctor(zend_function *fe, zend_string *newname TSRMLS_DC);
+void php_runkit_function_dtor(zend_function *fe);
+int php_runkit_generate_lambda_method(const zend_string *arguments, const zend_string *phpcode,
                                       zend_function **pfe, zend_bool return_ref TSRMLS_DC);
 int php_runkit_destroy_misplaced_functions(zval *pDest TSRMLS_DC);
 int php_runkit_restore_internal_functions(RUNKIT_53_TSRMLS_ARG(zval *pDest), int num_args, va_list args, zend_hash_key *hash_key);
 int php_runkit_clean_zval(zval **val TSRMLS_DC);
 
 /* runkit_methods.c */
-int php_runkit_fetch_class(const char *classname, int classname_len, zend_class_entry **pce TSRMLS_DC);
-int php_runkit_fetch_class_int(const char *classname, int classname_len, zend_class_entry **pce TSRMLS_DC);
-int php_runkit_clean_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), int num_args, va_list args, zend_hash_key *hash_key);
-int php_runkit_update_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), int num_args, va_list args, zend_hash_key *hash_key);
-int php_runkit_fetch_interface(const char *classname, int classname_len, zend_class_entry **pce TSRMLS_DC);
+int php_runkit_fetch_class(zend_string* classname, zend_class_entry **pce TSRMLS_DC);
+int php_runkit_fetch_class_int(zend_string *classname, zend_class_entry **pce TSRMLS_DC);
+void php_runkit_clean_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), zend_class_entry *ancestor_class, zend_class_entry *parent_class, zend_string *fname_lower, zend_function *orig_cfe);
+void php_runkit_update_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), zend_class_entry *ancestor_class, zend_class_entry *parent_class, zend_function *fe, zend_string *fname_lower, zend_function *orig_fe);
+void php_runkit_update_children_methods_foreach(RUNKIT_53_TSRMLS_ARG(HashTable *ht), zend_class_entry *ancestor_class, zend_class_entry *parent_class, zend_function *fe, zend_string *fname_lower, zend_function *orig_fe);
+int php_runkit_fetch_interface(zend_string *classname, zend_class_entry **pce TSRMLS_DC);
 
 #define PHP_RUNKIT_FUNCTION_ADD_REF(f)	function_add_ref(f TSRMLS_CC)
-#define php_runkit_locate_scope(ce, fe, methodname_lower, methodname_len)   fe->common.scope
-#define PHP_RUNKIT_DECL_STRING_PARAM(param)		void *param = NULL; int32_t param##_len = 0; zend_uchar param##_type;
-#define PHP_RUNKIT_STRING_SPEC				"t"
-#define PHP_RUNKIT_STRING_PARAM(param)			&param, &param##_len, &param##_type
+#define php_runkit_locate_scope(ce, fe, methodname_lower)   fe->common.scope
 #define PHP_RUNKIT_STRTOLOWER(param)			php_u_strtolower(param, &param##_len, UG(default_locale))
 #define PHP_RUNKIT_STRING_LEN(param,addtl)		(param##_type == IS_UNICODE ? UBYTES(param##_len + (addtl)) : (param##_len + (addtl)))
 #define PHP_RUNKIT_STRING_TYPE(param)			(param##_type)
 #define PHP_RUNKIT_HASH_FIND(hash,param,ppvar)		zend_u_hash_find(hash, param##_type, (UChar *)param, param##_len + 1, (void*)ppvar)
 #define PHP_RUNKIT_HASH_EXISTS(hash,param)		zend_u_hash_exists(hash, param##_type, (UChar *)param, param##_len + 1)
-#define PHP_RUNKIT_HASH_KEY(hash_key)			((hash_key)->type == HASH_KEY_IS_UNICODE ? (hash_key)->u.unicode : (hash_key)->u.string)
-#define PHP_RUNKIT_HASH_KEYLEN(hash_key)		((hash_key)->type == HASH_KEY_IS_UNICODE ? UBYTES((hash_key)->nKeyLength) : (hash_key)->nKeyLength)
-
-#define PHP_RUNKIT_MAKE_LOWERCASE_COPY(name) \
-	name##_lower = estrndup(name, name##_len); \
-	name##_lower_len = name##_len; \
-	if (name##_lower) { \
-		PHP_RUNKIT_STRTOLOWER(name##_lower); \
-	}
 
 #define PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR php_error_docref(NULL TSRMLS_CC, E_ERROR, "Not enough memory")
 
 /* runkit_constants.c */
-int php_runkit_update_children_consts(RUNKIT_53_TSRMLS_ARG(void *pDest), int num_args, va_list args, zend_hash_key *hash_key);
+#ifdef PHP_RUNKIT_MANIPULATION_CONSTANTS
+int php_runkit_update_children_consts(RUNKIT_53_TSRMLS_ARG(zval *pDest), int num_args, va_list args, zend_hash_key *hash_key);
+#endif
 
 /* runkit_classes.c */
-int php_runkit_class_copy(zend_class_entry *src, const char *classname, int classname_len TSRMLS_DC);
+int php_runkit_class_copy(zend_class_entry *src, zend_string *classname TSRMLS_DC);
 
 /* runkit_props.c */
 int php_runkit_update_children_def_props(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), int num_args, va_list args, zend_hash_key *hash_key);
-int php_runkit_def_prop_add_int(zend_class_entry *ce, const char *propname, int propname_len, zval *copyval, long visibility, const char *doc_comment, int doc_comment_len, zend_class_entry *definer_class, int override, int override_in_objects TSRMLS_DC);
-int php_runkit_def_prop_remove_int(zend_class_entry *ce, const char *propname, int propname_len, zend_class_entry *definer_class,
+int php_runkit_def_prop_add_int(zend_class_entry *ce, const zend_string *propname, zval *copyval, long visibility, const zend_string *doc_comment, zend_class_entry *definer_class, int override, int override_in_objects TSRMLS_DC);
+int php_runkit_def_prop_remove_int(zend_class_entry *ce, zend_string* propname, zend_class_entry *definer_class,
                                    zend_bool was_static, zend_bool remove_from_objects, zend_property_info *parent_property TSRMLS_DC);
-void php_runkit_remove_property_from_reflection_objects(zend_class_entry *ce, const char *prop_name, int prop_name_len TSRMLS_DC);
+void php_runkit_remove_property_from_reflection_objects(zend_class_entry *ce, zend_string *prop_name TSRMLS_DC);
 
 typedef struct _zend_closure {
     zend_object    std;
@@ -278,27 +301,32 @@ static inline void php_runkit_default_class_members_list_add(php_runkit_default_
 /* }}} */
 
 /* {{{ php_runkit_modify_function_doc_comment */
-static inline void php_runkit_modify_function_doc_comment(zend_function *fe, const char* doc_comment, int doc_comment_len) {
+static inline void php_runkit_modify_function_doc_comment(zend_function *fe, zend_string* doc_comment) {
 	if (fe->type == ZEND_USER_FUNCTION) {
 		if (doc_comment) {
-			char *tmp = (char *) fe->op_array.doc_comment;
-			fe->op_array.doc_comment = estrndup(doc_comment, doc_comment_len);
-			fe->op_array.doc_comment_len = doc_comment_len;
+			// TODO: Fix memory leak warnings related to doc comments for created/renamed functions.
+			zend_string *tmp = fe->op_array.doc_comment;
+			zend_string_addref(doc_comment);
+			fe->op_array.doc_comment = doc_comment;
 			if (tmp) {
-				efree(tmp);
+				zend_string_delref(tmp);
 			}
 		}
 	}
 }
 /* }}} */
 
+// TODO: If needed, rewrite this to account for PHP7's changes to HashTables.
+// Buckets have been changed from linked lists to a plain array of zvals
+// wrapped with a bit of additional data, as well as an index of the next Bucket to search
+// (Check if IS_UNDEF?)
 #define PHP_RUNKIT_ITERATE_THROUGH_OBJECTS_STORE_BEGIN(i) { \
 	if (EG(objects_store).object_buckets) { \
 		for (i = 1; i < EG(objects_store).top ; i++) { \
-			if (EG(objects_store).object_buckets[i].valid && (!EG(objects_store).object_buckets[i].destructor_called) && \
-			   EG(objects_store).object_buckets[i].bucket.obj.object) { \
+			if (EG(objects_store).object_buckets[i] && \
+			   IS_OBJ_VALID(EG(objects_store).object_buckets[i]) && (!(GC_FLAGS(EG(objects_store).object_buckets[i]) & IS_OBJ_DESTRUCTOR_CALLED))) { \
 				zend_object *object; \
-				object = (zend_object *) EG(objects_store).object_buckets[i].bucket.obj.object;
+				object = EG(objects_store).object_buckets[i];
 #define PHP_RUNKIT_ITERATE_THROUGH_OBJECTS_STORE_END \
 			} \
 		}\
@@ -371,61 +399,55 @@ struct _php_runkit_sandbox_object {
 #endif /* PHP_RUNKIT_SANDBOX */
 
 #ifdef PHP_RUNKIT_MANIPULATION
-#define PHP_RUNKIT_SPLIT_PN(classname, classname_len, pnname, pnname_len) { \
-	char *colon; \
-\
-	if ((pnname_len) > 3 && (colon = memchr((pnname), ':', (pnname_len) - 2)) && (colon[1] == ':')) { \
-		(classname) = (pnname); \
-		(classname_len) = colon - (classname); \
-		(pnname) = colon + 2; \
-		(pnname_len) -= (classname_len) + 2; \
-	} else { \
-		(classname) = NULL; \
-		(classname_len) = 0; \
-	} \
+
+#define PHP_RUNKIT_SPLIT_PN(classname, pnname) _PHP_RUNKIT_SPLIT_PN(&classname, &pnname)
+inline static void _PHP_RUNKIT_SPLIT_PN(zend_string **classname, zend_string **pnname) {
+	char *colon;
+
+	// FIXME: Need to correctly do reference tracking for the original and created strings.
+	if (ZSTR_LEN(*pnname) > 3 && (colon = memchr(ZSTR_VAL(*pnname), ':', ZSTR_LEN(*pnname) - 2)) && (colon[1] == ':')) {
+		*classname = zend_string_init(ZSTR_VAL(*pnname), colon - ZSTR_VAL(*pnname), 0);
+		*pnname = zend_string_init(colon, ZSTR_LEN(*pnname) - (ZSTR_LEN(*classname) + 2), 0);
+	} else {
+		*classname = NULL;
+	}
 }
 
-inline static void PHP_RUNKIT_ADD_MAGIC_METHOD(zend_class_entry *ce, char *lcmname, int mname_len, zend_function *fe, const zend_function *orig_fe TSRMLS_DC) {
-	if (!strncmp((lcmname), ZEND_CLONE_FUNC_NAME, (mname_len))) {
+inline static void PHP_RUNKIT_ADD_MAGIC_METHOD(zend_class_entry *ce, zend_string* lcmname, zend_function *fe, const zend_function *orig_fe TSRMLS_DC) {
+	if (zend_string_equals_literal(lcmname, ZEND_CLONE_FUNC_NAME)) {
 		(ce)->clone = (fe); (fe)->common.fn_flags |= ZEND_ACC_CLONE;
-	} else if (!strncmp((lcmname), ZEND_CONSTRUCTOR_FUNC_NAME, (mname_len))) {
+	} else if (zend_string_equals_literal(lcmname, ZEND_CONSTRUCTOR_FUNC_NAME)) {
 		if (!(ce)->constructor || (ce)->constructor == (orig_fe)) {
 			(ce)->constructor = (fe); (fe)->common.fn_flags |= ZEND_ACC_CTOR;
 		}
-	} else if (!strncmp((lcmname), ZEND_DESTRUCTOR_FUNC_NAME, (mname_len))) {
+	} else if (zend_string_equals_literal(lcmname, ZEND_DESTRUCTOR_FUNC_NAME)) {
 		(ce)->destructor = (fe); (fe)->common.fn_flags |= ZEND_ACC_DTOR;
-	} else if (!strncmp((lcmname), ZEND_GET_FUNC_NAME, (mname_len))) {
+	} else if (zend_string_equals_literal(lcmname, ZEND_GET_FUNC_NAME)) {
 		(ce)->__get = (fe);
-	} else if (!strncmp((lcmname), ZEND_SET_FUNC_NAME, (mname_len))) {
+	} else if (zend_string_equals_literal(lcmname, ZEND_SET_FUNC_NAME)) {
 		(ce)->__set = (fe);
-	} else if (!strncmp((lcmname), ZEND_CALL_FUNC_NAME, (mname_len))) {
+	} else if (zend_string_equals_literal(lcmname, ZEND_CALL_FUNC_NAME)) {
 		(ce)->__call = (fe);
-	} else if (!strncmp((lcmname), ZEND_UNSET_FUNC_NAME, (mname_len))) {
+	} else if (zend_string_equals_literal(lcmname, ZEND_UNSET_FUNC_NAME)) {
 		(ce)->__unset = (fe);
-	} else if (!strncmp((lcmname), ZEND_ISSET_FUNC_NAME, (mname_len))) {
+	} else if (zend_string_equals_literal(lcmname, ZEND_ISSET_FUNC_NAME)) {
 		(ce)->__isset = (fe);
-#if RUNKIT_ABOVE53
-	} else if (!strncmp((lcmname), ZEND_CALLSTATIC_FUNC_NAME, (mname_len))) {
+	} else if (zend_string_equals_literal(lcmname, ZEND_CALLSTATIC_FUNC_NAME)) {
 		(ce)->__callstatic = (fe);
-#endif
-	} else if (!strncmp((lcmname), ZEND_TOSTRING_FUNC_NAME, (mname_len))) {
+	} else if (zend_string_equals_literal(lcmname, ZEND_TOSTRING_FUNC_NAME)) {
 		(ce)->__tostring = (fe);
-	} else if (!strncmp((lcmname), ZEND_DEBUGINFO_FUNC_NAME, (mname_len))) {
+	} else if (zend_string_equals_literal(lcmname, ZEND_DEBUGINFO_FUNC_NAME)) {
 		(ce)->__debugInfo = (fe);
-	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) && !strncmp((lcmname), "serialize", (mname_len))) {
+	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) && zend_string_equals_literal(lcmname, "serialize")) {
 		(ce)->serialize_func = (fe);
-	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) && !strncmp((lcmname), "unserialize", (mname_len))) {
+	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) && zend_string_equals_literal(lcmname, "unserialize")) {
 		(ce)->unserialize_func = (fe);
-	} else if ((ce)->name_length == (mname_len)) {
-		char *lowercase_name = emalloc((ce)->name_length + 1);
-		zend_str_tolower_copy(lowercase_name, (ce)->name, (ce)->name_length);
-		if (!memcmp((lcmname), lowercase_name, (mname_len))) {
-			if (!(ce)->constructor || (ce)->constructor == (orig_fe)) {
-				(ce)->constructor = (fe);
-				(fe)->common.fn_flags |= ZEND_ACC_CTOR;
-			}
+	} else if (zend_string_equals_ci(lcmname, (ce)->name)) {
+		// TODO: Re-examine the changes to the constructor code for any bugs.
+		if (!(ce)->constructor || (ce)->constructor == (orig_fe)) {
+			(ce)->constructor = (fe);
+			(fe)->common.fn_flags |= ZEND_ACC_CTOR;
 		}
-		efree(lowercase_name);
 	}
 }
 
@@ -486,12 +508,11 @@ inline static void PHP_RUNKIT_INHERIT_MAGIC(zend_class_entry *ce, const zend_fun
 }
 
 /* {{{ php_runkit_parse_doc_comment_arg */
-inline static void php_runkit_parse_doc_comment_arg(int argc, zval ***args, int arg_pos, const char **pdoc_comment, int *pdoc_comment_len TSRMLS_DC) {
+inline static void php_runkit_parse_doc_comment_arg(int argc, zval *args, int arg_pos, zend_string** pdoc_comment) {
 	if (argc > arg_pos) {
-		if (Z_TYPE_PP(args[arg_pos]) == IS_STRING) {
-			*pdoc_comment = Z_STRVAL_PP(args[arg_pos]);
-			*pdoc_comment_len = Z_STRLEN_PP(args[arg_pos]);
-		} else if (Z_TYPE_PP(args[arg_pos])) {
+		if (Z_TYPE(args[arg_pos]) == IS_STRING) {
+			*pdoc_comment = Z_STR(args[arg_pos]);
+		} else if (Z_TYPE(args[arg_pos])) {
 			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Doc comment should be a string or NULL");
 		}
 	}
@@ -499,8 +520,8 @@ inline static void php_runkit_parse_doc_comment_arg(int argc, zval ***args, int 
 /* }}} */
 
 /* {{{ php_runkit_parse_args_to_zvals */
-inline static zend_bool php_runkit_parse_args_to_zvals(int argc, zval ****pargs TSRMLS_DC) {
-	*pargs = (zval ***) emalloc(argc * sizeof(zval **));
+inline static zend_bool php_runkit_parse_args_to_zvals(int argc, zval **pargs TSRMLS_DC) {
+	*pargs = (zval *) emalloc(argc * sizeof(zval));
 	if (*pargs == NULL) {
 		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
 		return 0;
@@ -517,22 +538,18 @@ inline static zend_bool php_runkit_parse_args_to_zvals(int argc, zval ****pargs 
 #define PHP_RUNKIT_BODY_ERROR_MSG "%s's body should be either a closure or two strings"
 
 /* {{{ zend_bool php_runkit_parse_function_arg */
-inline static zend_bool php_runkit_parse_function_arg(int argc, zval ***args, int arg_pos, zend_function **fe, const char **arguments, int *arguments_len, const char **phpcode, int *phpcode_len, long *opt_arg_pos, char *type TSRMLS_DC) {
-#if RUNKIT_ABOVE53
-	if (Z_TYPE_PP(args[arg_pos]) == IS_OBJECT && zend_get_class_entry(*args[arg_pos] TSRMLS_CC) == zend_ce_closure) {
-		*fe = (zend_function *) zend_get_closure_method_def(*args[arg_pos] TSRMLS_CC);
-	} else
-#endif
-	  if (Z_TYPE_PP(args[arg_pos]) == IS_STRING) {
+inline static zend_bool php_runkit_parse_function_arg(int argc, zval *args, int arg_pos, zend_function **fe, zend_string** arguments, zend_string** phpcode, long *opt_arg_pos, char *type TSRMLS_DC) {
+	// TODO: Does this do the right thing?
+	if (Z_TYPE(args[arg_pos]) == IS_OBJECT && Z_OBJCE(args[arg_pos]) == zend_ce_closure) {
+		*fe = (zend_function *) zend_get_closure_method_def(&(args[arg_pos]) TSRMLS_CC);
+	} else if (Z_TYPE(args[arg_pos]) == IS_STRING) {
 		(*opt_arg_pos)++;
-		*arguments = Z_STRVAL_PP(args[arg_pos]);
-		*arguments_len = Z_STRLEN_PP(args[arg_pos]);
-		if (argc < arg_pos+2 || Z_TYPE_PP(args[arg_pos+1]) != IS_STRING) {
+		*arguments = Z_STR(args[arg_pos]);
+		if (argc < arg_pos+2 || Z_TYPE(args[arg_pos+1]) != IS_STRING) {
 			php_error_docref(NULL TSRMLS_CC, E_ERROR, PHP_RUNKIT_BODY_ERROR_MSG, type);
 			return 0;
 		}
-		*phpcode = Z_STRVAL_PP(args[arg_pos+1]);
-		*phpcode_len = Z_STRLEN_PP(args[arg_pos+1]);
+		*phpcode = Z_STR(args[arg_pos+1]);
 	} else {
 		php_error_docref(NULL TSRMLS_CC, E_ERROR, PHP_RUNKIT_BODY_ERROR_MSG, type);
 		return 0;
@@ -543,28 +560,14 @@ inline static zend_bool php_runkit_parse_function_arg(int argc, zval ***args, in
 
 #	define PHP_RUNKIT_DESTROY_FUNCTION(fe) 	destroy_zend_function(fe TSRMLS_CC);
 
-#	define PHP_RUNKIT_UPDATE_REFLECTION_OBJECT_NAME(object, handle, name) { \
-		zval obj, *zvname, *zvnew_name; \
-		INIT_ZVAL(obj); \
-		Z_TYPE(obj) = IS_OBJECT; \
-		Z_OBJ_HANDLE(obj) = (handle); \
-		Z_SET_REFCOUNT(obj, 1); \
-		/* TODO: This is definitely wrong. */ \
-		obj.RUNKIT_IS_REF = 1; \
-		MAKE_STD_ZVAL(zvname); \
-		ZVAL_STRING(zvname, RUNKIT_G(name_str), 1); \
-		MAKE_STD_ZVAL(zvnew_name); \
-		ZVAL_STRING(zvnew_name, (name), 1); \
-		zend_std_write_property(&obj, zvname, zvnew_name, NULL TSRMLS_CC); \
-		zval_ptr_dtor(&zvnew_name); \
-		zval_ptr_dtor(&zvname); \
-	}
+// TODO: move to a separate file.
+void php_runkit_update_reflection_object_name(zend_object* object, int handle, const char* name);
 
 #	define PHP_RUNKIT_DELETE_REFLECTION_FUNCTION_PTR(obj) { \
 		if ((obj)->ptr \
 			&& ((zend_function *)(obj)->ptr)->type == ZEND_INTERNAL_FUNCTION \
 			&& (((zend_function *)(obj)->ptr)->internal_function.fn_flags & ZEND_ACC_CALL_VIA_HANDLER) != 0) { \
-			efree((char*)((zend_function *)(obj)->ptr)->internal_function.function_name); \
+			zend_string_release(((zend_function *)(obj)->ptr)->internal_function.function_name); \
 			efree((obj)->ptr); \
 		} \
 	}

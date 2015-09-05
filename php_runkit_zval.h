@@ -2,18 +2,10 @@
 #define PHP_RUNKIT_ZVAL_H
 
 /* {{{ php_runkit_zval_resolve_class_constant */
-inline static void php_runkit_zval_resolve_class_constant(zval **pp, zend_class_entry *ce TSRMLS_DC) {
-	if (
-	    Z_TYPE_PP(pp) == IS_CONSTANT_AST
-#if RUNKIT_ABOVE53
-	    || (Z_TYPE_PP(pp) & IS_CONSTANT_TYPE_MASK) == IS_CONSTANT
-#endif
-	) {
-#if (PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 2) || (PHP_MAJOR_VERSION > 5)
-		zval_update_constant_ex(pp, PHP_RUNKIT_CONSTANT_INDEX(1), ce TSRMLS_CC);
-#else
-		zval_update_constant(pp, ce TSRMLS_CC);
-#endif
+inline static void php_runkit_zval_resolve_class_constant(zval *p, zend_class_entry *ce TSRMLS_DC) {
+	if (Z_TYPE_P(p) == IS_CONSTANT_AST || Z_TYPE_P(p) == IS_CONSTANT) {
+    // TODO: What does this do?
+		zval_update_constant_ex(p, PHP_RUNKIT_CONSTANT_INDEX(1), ce TSRMLS_CC);
 	}
 }
 /* }}} */

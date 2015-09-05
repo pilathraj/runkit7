@@ -22,7 +22,8 @@
 #include "php_runkit.h"
 #include "php_runkit_zval.h"
 
-#ifdef PHP_RUNKIT_MANIPULATION
+// TODO: Actually implement this.
+#ifdef PHP_RUNKIT_MANIPULATION_IMPORT
 /* {{{ php_runkit_import_functions
  */
 static int php_runkit_import_functions(HashTable *function_table, long flags
@@ -151,7 +152,7 @@ static int php_runkit_import_class_methods(zend_class_entry *dce, zend_class_ent
 
 			*clear_cache = 1;
 
-			zend_hash_apply_with_arguments(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), (apply_func_args_t)php_runkit_clean_children_methods, 5, scope, dce, fn, fn_len, dfe);
+			php_runkit_clean_children_methods_foreach(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), scope, dce, fn, fn_len, dfe);
 			php_runkit_remove_function_from_reflection_objects(dfe TSRMLS_CC);
 			if (zend_hash_del(&dce->function_table, fn, fn_len + 1) == FAILURE) {
 				php_error_docref(NULL TSRMLS_CC, E_WARNING, "Error removing old method in destination class %s::%s", dce->name, fe->common.function_name);
@@ -175,7 +176,7 @@ static int php_runkit_import_class_methods(zend_class_entry *dce, zend_class_ent
 			continue;
 		}
 		PHP_RUNKIT_ADD_MAGIC_METHOD(dce, fn, fn_len, fe, dfe TSRMLS_CC);
-		zend_hash_apply_with_arguments(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), (apply_func_args_t)php_runkit_update_children_methods, 7,
+		php_runkit_update_children_methods_foreach(RUNKIT_53_TSRMLS_PARAM(EG(class_table))
 		                               dce, dce, fe, fn, fn_len, dfe, 0);
 		zend_hash_move_forward_ex(&ce->function_table, &pos);
 	}
@@ -218,7 +219,7 @@ static int php_runkit_import_class_consts(zend_class_entry *dce, zend_class_entr
 				php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to import %s::%s", dce->name, key);
 			}
 
-			zend_hash_apply_with_arguments(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), (apply_func_args_t)php_runkit_update_children_consts, 4, dce, c, key, key_len - 1);
+			php_runkit_update_children_consts_foreach(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), dce, c, key, key_len - 1);
 		} else {
 			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Constant has invalid key name");
 		}
@@ -442,7 +443,7 @@ static int php_runkit_import_classes(HashTable *class_table, long flags
  * This is only used when an accelerator has replaced zend_compile_file() with an alternate method
  * which has been known to cause issues with overly-optimistic early binding.
  *
- * It would be clener to temporarily set zend_compile_file back to compile_file, but that wouldn't be
+ * It would be cleaner to temporarily set zend_compile_file back to compile_file, but that wouldn't be
  * particularly thread-safe so.... */
 static zend_op_array *php_runkit_compile_filename(int type, zval *filename TSRMLS_DC)
 {
@@ -523,7 +524,7 @@ PHP_FUNCTION(runkit_import)
 	convert_to_string(filename);
 
 	if (compile_file != zend_compile_file) {
-		/* An accellerator or other dark force is at work
+		/* An accelerator or other dark force is at work
 		 * Use the wrapper method to force the builtin compiler
 		 * to be used */
 		local_compile_filename = php_runkit_compile_filename;
@@ -573,7 +574,7 @@ PHP_FUNCTION(runkit_import)
 
 		CG(in_compilation) = 1;
 		while (opline_num != -1) {
-			if (php_runkit_fetch_class_int(Z_STRVAL_P(new_op_array->opcodes[opline_num-1].op2.zv), Z_STRLEN_P(new_op_array->opcodes[opline_num-1].op2.zv), &pce TSRMLS_CC) == SUCCESS) {
+			if (php_runkit_fetch_class_int(Z_STR(new_op_array->opcodes[opline_num-1].op2.zv), &pce TSRMLS_CC) == SUCCESS) {
 				do_bind_inherited_class(new_op_array, &new_op_array->opcodes[opline_num], tmp_class_table, pce, 0 TSRMLS_CC);
 			}
 			opline_num = new_op_array->opcodes[opline_num].result.opline_num;

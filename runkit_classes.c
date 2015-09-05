@@ -23,33 +23,32 @@
 #include "php_runkit_zval.h"
 
 #ifdef PHP_RUNKIT_MANIPULATION
+#ifdef PHP_RUNKIT_MANIPULATION_PROPERTIES
 /* {{{ php_runkit_remove_inherited_methods */
 static int php_runkit_remove_inherited_methods(zend_function *fe, zend_class_entry *ce TSRMLS_DC)
 {
-	const char *fname = fe->common.function_name;
-	int fname_len = strlen(fname);
-	PHP_RUNKIT_DECL_STRING_PARAM(fname_lower)
+	zend_string * const fname = fe->common.function_name;
+	zend_string *fname_lower;
 	zend_class_entry *ancestor_class;
 
-	PHP_RUNKIT_MAKE_LOWERCASE_COPY(fname);
+	fname_lower = zend_string_tolower(fname);
 	if (fname_lower == NULL) {
 		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
 		return ZEND_HASH_APPLY_KEEP;
 	}
 
-	ancestor_class = php_runkit_locate_scope(ce, fe, fname_lower, fname_lower_len);
+	ancestor_class = php_runkit_locate_scope(ce, fe, fname_lower);
 
 	if (ancestor_class == ce) {
-		efree(fname_lower);
+		zend_string_release(fname_lower);
 		return ZEND_HASH_APPLY_KEEP;
 	}
 
-	zend_hash_apply_with_arguments(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), (apply_func_args_t)php_runkit_clean_children_methods, 5,
-				       ancestor_class, ce, fname_lower, fname_lower_len, fe);
+	php_runkit_clean_children_methods_foreach(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), ancestor_class, ce, fname_lower, fe);
 	PHP_RUNKIT_DEL_MAGIC_METHOD(ce, fe TSRMLS_CC);
 	php_runkit_remove_function_from_reflection_objects(fe TSRMLS_CC);
 
-	efree(fname_lower);
+	zend_string_release(fname_lower);
 	return ZEND_HASH_APPLY_REMOVE;
 }
 /* }}} */
@@ -78,18 +77,16 @@ static inline const void *php_runkit_memrchr(const void *s, int c, size_t n)
 PHP_FUNCTION(runkit_class_emancipate)
 {
 	zend_class_entry *ce;
-	PHP_RUNKIT_DECL_STRING_PARAM(classname)
+	zend_string *classname;
 	HashPosition pos;
-	char *key;
-	uint key_len;
-	ulong idx;
+	zend_string *key;
 	zend_property_info *property_info_ptr = NULL;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s/", &classname, &classname_len) == FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "S", &classname) == FAILURE) {
 		RETURN_FALSE;
 	}
 
-	if (php_runkit_fetch_class(classname, classname_len, &ce TSRMLS_CC) == FAILURE) {
+	if (php_runkit_fetch_class(classname, &ce TSRMLS_CC) == FAILURE) {
 		RETURN_FALSE;
 	}
 
@@ -100,27 +97,30 @@ PHP_FUNCTION(runkit_class_emancipate)
 
 	php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
 
-	zend_hash_apply_with_argument(&ce->function_table, (apply_func_arg_t)php_runkit_remove_inherited_methods, ce TSRMLS_CC);
+	php_runkit_remove_inherited_methods_foreach(&ce->function_table, ce TSRMLS_CC);
 
-	zend_hash_internal_pointer_reset_ex(&ce->parent->properties_info, &pos);
-	while (zend_hash_get_current_data_ex(&ce->parent->properties_info, (void*) &property_info_ptr, &pos) == SUCCESS && property_info_ptr) {
-		if (zend_hash_get_current_key_ex(&ce->parent->properties_info, &key, &key_len, &idx, 0, &pos) == HASH_KEY_IS_STRING) {
-			const char *propname = property_info_ptr->name;
-			int propname_len = property_info_ptr->name_length;
+	ZEND_HASH_FOREACH_STR_KEY_PTR(&ce->parent->properties_info, key, property_info_ptr) {
+		if (key != NULL) {
+			const char *propname = ZSTR_VAL(property_info_ptr->name);
+			int propname_len = ZSTR_LEN(property_info_ptr->name);
 			const char *last_null;
+			// TODO: Abstract this out.
+			zend_string *propname_zs;
 
 			last_null = php_runkit_memrchr(propname, 0, propname_len);
 			if (last_null) {
 			    propname_len -= last_null - propname + 1;
 			    propname = last_null+1;
 			}
+			propname_zs = zend_string_init(propname, propname_len, 0);
 
-			php_runkit_def_prop_remove_int(ce, propname, propname_len,
+			php_runkit_def_prop_remove_int(ce, propname_zs,
 			                            ce->parent, (property_info_ptr->flags & ZEND_ACC_STATIC) != 0,
 			                            1 /* remove_from_objects */, property_info_ptr TSRMLS_CC);
+			// TODO: zend_string_release?
 		}
 		zend_hash_move_forward_ex(&ce->parent->properties_info, &pos);
-	}
+	} ZEND_HASH_FOREACH_END();
 	ce->parent = NULL;
 
 	RETURN_TRUE;
@@ -131,43 +131,41 @@ PHP_FUNCTION(runkit_class_emancipate)
 	Inherit methods from a new ancestor */
 static int php_runkit_inherit_methods(zend_function *fe, zend_class_entry *ce TSRMLS_DC)
 {
-	const char *fname = fe->common.function_name;
-	int fname_len = strlen(fname);
-	PHP_RUNKIT_DECL_STRING_PARAM(fname_lower)
+	zend_string *fname = fe->common.function_name;
+	zend_string *fname_lower;
 	zend_class_entry *ancestor_class;
 
 	/* method name keys must be lower case */
-	PHP_RUNKIT_MAKE_LOWERCASE_COPY(fname);
+	fname_lower = zend_string_copy(fname);
 	if (fname_lower == NULL) {
 		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
 		return ZEND_HASH_APPLY_KEEP;
 	}
 
-	if (zend_hash_exists(&ce->function_table, (char *) fname_lower, fname_lower_len + 1)) {
-		efree(fname_lower);
+	if (zend_hash_exists(&ce->function_table, fname_lower)) {
+		zend_string_release(fname_lower);
 		return ZEND_HASH_APPLY_KEEP;
 	}
 
-	ancestor_class = php_runkit_locate_scope(ce, fe, fname_lower, fname_lower_len);
+	ancestor_class = php_runkit_locate_scope(ce, fe, fname_lower);
 
-	if (zend_hash_add_or_update(&ce->function_table, fname_lower, fname_lower_len + 1, fe, sizeof(zend_function), NULL, HASH_ADD) == FAILURE) {
+	if (runkit_zend_hash_add_or_update_ptr(&ce->function_table, fname_lower, fe, HASH_ADD) == NULL) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Error inheriting parent method: %s()", fe->common.function_name);
-		efree(fname_lower);
+		zend_string_release(fname_lower);
 		return ZEND_HASH_APPLY_KEEP;
 	}
 
-	if ((fe = zend_hash_str_find(&ce->function_table, lower_function_name, function_name_len + 1, (void*)&fe)) == NULL) {
+	if ((fe = zend_hash_find_ptr(&ce->function_table, fname_lower)) == NULL) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to locate newly added method");
-		efree(fname_lower);
+		zend_string_release(fname_lower);
 		return ZEND_HASH_APPLY_KEEP;
 	}
 
 	PHP_RUNKIT_FUNCTION_ADD_REF(fe);
-	PHP_RUNKIT_ADD_MAGIC_METHOD(ce, fname_lower, fname_lower_len, fe, NULL TSRMLS_CC);
+	PHP_RUNKIT_ADD_MAGIC_METHOD(ce, fname_lower, fe, NULL TSRMLS_CC);
 
-	zend_hash_apply_with_arguments(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), (apply_func_args_t)php_runkit_update_children_methods, 6,
-				       ancestor_class, ce, fe, fname_lower, fname_lower_len, NULL);
-	efree(fname_lower);
+	php_runkit_update_children_methods_foreach(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), ancestor_class, ce, fe, fname_lower, NULL);
+	zend_string_release(fname_lower);
 
 	return ZEND_HASH_APPLY_KEEP;
 }
@@ -175,12 +173,12 @@ static int php_runkit_inherit_methods(zend_function *fe, zend_class_entry *ce TS
 
 /* {{{ php_runkit_class_copy
        Copy class into class table */
-int php_runkit_class_copy(zend_class_entry *src, const char *classname, int classname_len TSRMLS_DC)
+int php_runkit_class_copy(zend_class_entry *src, zend_string *classname TSRMLS_DC)
 {
 	zend_class_entry *new_class_entry, *parent = NULL;
-	PHP_RUNKIT_DECL_STRING_PARAM(classname_lower)
+	zend_string *classname_lower;
 
-	PHP_RUNKIT_MAKE_LOWERCASE_COPY(classname);
+	classname_lower = zend_string_tolower(classname);
 	if (!classname_lower) {
 		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
 		return FAILURE;
@@ -188,31 +186,29 @@ int php_runkit_class_copy(zend_class_entry *src, const char *classname, int clas
 
 	new_class_entry = emalloc(sizeof(zend_class_entry));
 	if (src->parent && src->parent->name) {
-		php_runkit_fetch_class_int(src->parent->name, src->parent->name_length, &parent TSRMLS_CC);
+		php_runkit_fetch_class_int(src->parent->name, &parent TSRMLS_CC);
 	}
 	new_class_entry->type = ZEND_USER_CLASS;
-	new_class_entry->name = estrndup(classname, classname_len);
-	new_class_entry->name_length = classname_len;
+	new_class_entry->name = classname;
 
 	zend_initialize_class_data(new_class_entry, 1 TSRMLS_CC);
 	new_class_entry->parent = parent;
 	new_class_entry->info.user.filename = src->info.user.filename;
 	new_class_entry->info.user.line_start = src->info.user.line_start;
 	new_class_entry->info.user.doc_comment = src->info.user.doc_comment;
-	new_class_entry->info.user.doc_comment_len = src->info.user.doc_comment_len;
 	new_class_entry->info.user.line_end = src->info.user.line_end;
 	new_class_entry->num_traits = src->num_traits;
 	new_class_entry->traits = src->traits;
 	new_class_entry->ce_flags = src->ce_flags;
 
-	zend_hash_update(EG(class_table), classname_lower, classname_lower_len + 1, &new_class_entry, sizeof(zend_class_entry *), NULL);
+	// TODO: zend_hash_update_ptr for everything to do with class_table
+	zend_hash_update_ptr(EG(class_table), classname_lower, new_class_entry);
 
 	new_class_entry->num_interfaces = src->num_interfaces;
-	efree(classname_lower);
+	zend_string_release(classname_lower);
 
 	if (new_class_entry->parent) {
-		zend_hash_apply_with_argument(&(new_class_entry->parent->function_table),
-		                              (apply_func_arg_t)php_runkit_inherit_methods, new_class_entry TSRMLS_CC);
+		php_runkit_inherit_methods_foreach(&(new_class_entry->parent->function_table), new_class_entry);
 	}
 
 	return SUCCESS;
@@ -224,71 +220,71 @@ int php_runkit_class_copy(zend_class_entry *src, const char *classname, int clas
 PHP_FUNCTION(runkit_class_adopt)
 {
 	zend_class_entry *ce, *parent;
-	PHP_RUNKIT_DECL_STRING_PARAM(classname)
-	PHP_RUNKIT_DECL_STRING_PARAM(parentname)
+	zend_string *classname, *parentname;
 	HashPosition pos;
-	char *key;
-	uint key_len;
-	ulong idx;
+	zend_string *key;
 	zend_property_info *property_info_ptr = NULL;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s/s/", &classname, &classname_len, &parentname, &parentname_len) == FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "SS", &classname, &parentname) == FAILURE) {
 		RETURN_FALSE;
 	}
 
-	if (php_runkit_fetch_class(classname, classname_len, &ce TSRMLS_CC) == FAILURE) {
+	if (php_runkit_fetch_class(classname, &ce TSRMLS_CC) == FAILURE) {
 		RETURN_FALSE;
 	}
 
 	if (ce->parent) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Class %s already has a parent", classname);
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Class %s already has a parent", ZSTR_VAL(classname));
 		RETURN_FALSE;
 	}
 
-	if (php_runkit_fetch_class(parentname, parentname_len, &parent TSRMLS_CC) == FAILURE) {
+	if (php_runkit_fetch_class(parentname, &parent TSRMLS_CC) == FAILURE) {
 		RETURN_FALSE;
 	}
 
 	ce->parent = parent;
 
 	zend_hash_internal_pointer_reset_ex(&parent->properties_info, &pos);
-	while (zend_hash_get_current_data_ex(&parent->properties_info, (void*) &property_info_ptr, &pos) == SUCCESS && property_info_ptr) {
-		if (zend_hash_get_current_key_ex(&parent->properties_info, &key, &key_len, &idx, 0, &pos) == HASH_KEY_IS_STRING) {
-			zval **pp;
-			const char *propname = property_info_ptr->name;
-			int propname_len = property_info_ptr->name_length;
+	ZEND_HASH_FOREACH_STR_KEY_PTR(&parent->properties_info, key, property_info_ptr) {
+		if (key != NULL) {
+			zval *p;
+			const char *propname = ZSTR_VAL(property_info_ptr->name);
+			int propname_len = ZSTR_LEN(property_info_ptr->name);
 			const char *last_null;
+			zend_string* propname_zs;
 
 			if (property_info_ptr->flags & ZEND_ACC_STATIC) {
-				pp = &CE_STATIC_MEMBERS(parent)[property_info_ptr->offset];
+				p = &CE_STATIC_MEMBERS(parent)[property_info_ptr->offset];
 			} else {
-				pp = &parent->default_properties_table[property_info_ptr->offset];
+				p = &parent->default_properties_table[property_info_ptr->offset];
 			}
 
-			php_runkit_zval_resolve_class_constant(pp, parent TSRMLS_CC);
+			php_runkit_zval_resolve_class_constant(p, parent TSRMLS_CC);
 
 			last_null = php_runkit_memrchr(propname, 0, propname_len);
 			if (last_null) {
-			    propname_len -= last_null - propname + 1;
-			    propname = last_null+1;
+				propname_len -= last_null - propname + 1;
+				propname = last_null+1;
 			}
+			propname_zs = zend_string_init(propname, propname_len, 0);
 
-			php_runkit_def_prop_add_int(ce, propname, propname_len,
-			                            *pp, property_info_ptr->flags/*visibility*/,
-			                            property_info_ptr->doc_comment, property_info_ptr->doc_comment_len,
-			                            property_info_ptr->ce /*definer_class*/, 0 /*override*/, 1 /*override_in_objects*/ TSRMLS_CC);
+			php_runkit_def_prop_add_int(ce, propname_zs,
+										p, property_info_ptr->flags/*visibility*/,
+										property_info_ptr->doc_comment,
+										property_info_ptr->ce /*definer_class*/, 0 /*override*/, 1 /*override_in_objects*/ TSRMLS_CC);
+			// TODO: free propname_zs?
 		}
-		zend_hash_move_forward_ex(&ce->properties_info, &pos);
-	}
+	} ZEND_HASH_FOREACH_END();
 
 	php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
 
-	zend_hash_apply_with_argument(&parent->function_table, (apply_func_arg_t)php_runkit_inherit_methods, ce TSRMLS_CC);
+	php_runkit_inherit_methods_foreach(&parent->function_table, ce TSRMLS_CC);
 
 	RETURN_TRUE;
 }
 /* }}} */
 
+#endif /* PHP_RUNKIT_MANIPULATION_PROPERTIES */
 #endif /* PHP_RUNKIT_MANIPULATION */
 
 /* {{{ proto int runkit_object_id(object instance)

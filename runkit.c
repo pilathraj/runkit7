@@ -85,9 +85,13 @@ zend_function_entry runkit_functions[] = {
 #endif
 
 #ifdef PHP_RUNKIT_MANIPULATION
+#ifdef PHP_RUNKIT_MANIPULATION_PROPERTIES
 	PHP_FE(runkit_class_emancipate,									NULL)
 	PHP_FE(runkit_class_adopt,										NULL)
+#endif
+#ifdef PHP_RUNKIT_MANIPULATION_IMPORT
 	PHP_FE(runkit_import,											NULL)
+#endif
 
 	PHP_FE(runkit_function_add,										NULL)
 	PHP_FE(runkit_function_remove,									NULL)
@@ -110,12 +114,16 @@ zend_function_entry runkit_functions[] = {
 	PHP_FALIAS(classkit_import,				runkit_import,			NULL)
 #endif
 
+#ifdef PHP_RUNKIT_MANIPULATION_CONSTANTS
 	PHP_FE(runkit_constant_redefine,								NULL)
 	PHP_FE(runkit_constant_remove,									NULL)
 	PHP_FE(runkit_constant_add,										NULL)
+#endif
 
+#ifdef PHP_RUNKIT_MANIPULATION_PROPERTIES
 	PHP_FE(runkit_default_property_add,								NULL)
 	PHP_FE(runkit_default_property_remove,								NULL)
+#endif
 #endif /* PHP_RUNKIT_MANIPULATION */
 
 #ifdef PHP_RUNKIT_SANDBOX
@@ -173,7 +181,7 @@ ZEND_FUNCTION(_php_runkit_removed_method) {
 
 static inline void _php_runkit_init_stub_function(const char *name, void (*handler)(INTERNAL_FUNCTION_PARAMETERS), zend_function **result) {
 	*result = pemalloc(sizeof(zend_function), 1);
-	(*result)->common.function_name = zend_string_init(name, strlen(name), 0);  // TODO: Can this be persistent?
+	(*result)->common.function_name = zend_string_init(name, strlen(name), 1);  // TODO: Can this be persistent?
 	(*result)->common.scope = NULL;
 	(*result)->common.arg_info = NULL;
 	(*result)->common.num_args = 0;
@@ -218,7 +226,7 @@ static void _php_runkit_feature_constant(const char *name, size_t name_len, zend
 
 	ZVAL_BOOL(&(c.value), enabled);
 	c.flags = flags;
-	c.name = zend_string_init(name, name_len - 1, 0);  // TODO: can this be persistent?
+	c.name = zend_string_init(name, name_len - 1, 1);  // TODO: can this be persistent?
 	c.module_number = module_number;
 	zend_register_constant(&c TSRMLS_CC);
 }
@@ -318,16 +326,19 @@ PHP_MSHUTDOWN_FUNCTION(runkit)
 static void php_runkit_register_auto_global(char *s, int len TSRMLS_DC)
 {
 	zend_auto_global *auto_global;
+	zend_string* globalName;
+	zval z;
 
 	if (zend_hash_str_exists(CG(auto_globals), s, len + 1)) {
 		/* Registered already */
 		return;
 	}
 
-	zend_string* globalName = zend_string_init(s, len, 0);
+	globalName = zend_string_init(s, len, 0);
 	if (zend_register_auto_global(globalName,
 			0,
 		    NULL TSRMLS_CC) == SUCCESS) {
+		// FIXME: This is broken.
 
 		// TODO: How do I get an auto global out of a zend_hash????
 		if ((auto_global = zend_hash_find_ptr(CG(auto_globals), globalName)) == NULL) {
@@ -340,7 +351,6 @@ static void php_runkit_register_auto_global(char *s, int len TSRMLS_DC)
 			ALLOC_HASHTABLE(RUNKIT_G(superglobals));
 			zend_hash_init(RUNKIT_G(superglobals), 2, NULL, NULL, 0);
 		}
-		zval z;
 		// TODO: destructor calls?
 		ZVAL_NEW_STR(&z, globalName);
 		// This seems like it was a bug in the original function? They tried to insert a raw string?
@@ -439,16 +449,18 @@ PHP_RSHUTDOWN_FUNCTION(runkit)
 
 	if (RUNKIT_G(replaced_internal_functions)) {
 		/* Restore internal functions */
-		zend_hash_apply_with_arguments(RUNKIT_53_TSRMLS_PARAM(RUNKIT_G(replaced_internal_functions)), php_runkit_restore_internal_functions, 1, RUNKIT_TSRMLS_C);
+		zend_hash_apply_with_arguments(RUNKIT_53_TSRMLS_PARAM(RUNKIT_G(replaced_internal_functions)), php_runkit_restore_internal_functions, 1 RUNKIT_TSRMLS_C);
 		zend_hash_destroy(RUNKIT_G(replaced_internal_functions));
 		FREE_HASHTABLE(RUNKIT_G(replaced_internal_functions));
 		RUNKIT_G(replaced_internal_functions) = NULL;
 	}
 
-#if PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4 || PHP_MAJOR_VERSION > 5
 	el = RUNKIT_G(removed_default_class_members);
+	// TODO: I have no idea what this is trying to do.
 	while (el) {
 		php_runkit_default_class_members_list_element *tmp;
+		/*
+		// TODO: Some sort of cleanup?
 		zval **table = el->is_static ? el->ce->default_static_members_table : el->ce->default_properties_table;
 		zval **table_el = &table[el->offset];
 		if ( *table_el == NULL ) {
@@ -456,11 +468,11 @@ PHP_RSHUTDOWN_FUNCTION(runkit)
 			Z_TYPE_PP(table_el) = IS_NULL;
 			Z_SET_REFCOUNT_PP(table_el, 1);
 		}
+		*/
 		tmp = el;
 		el = el->next;
 		efree(tmp);
 	}
-#endif
 #endif /* PHP_RUNKIT_MANIPULATION */
 
 	return SUCCESS;

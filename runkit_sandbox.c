@@ -21,7 +21,7 @@
 /* $Id$ */
 
 #include "php_runkit.h"
-#include "ext/standard/php_smart_str.h"
+#include "ext/standard/php_smart_string.h"
 
 #ifdef PHP_RUNKIT_SANDBOX
 #include "SAPI.h"
