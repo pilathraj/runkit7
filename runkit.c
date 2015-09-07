@@ -50,6 +50,7 @@ PHP_FUNCTION(runkit_superglobals)
  */
 PHP_FUNCTION(runkit_zval_inspect)
 {
+	// TODO: Specify what this should do for php7 (e.g. primitives are no longer refcounted)
 	zval *value;
 	char *addr;
 	int addr_len;
@@ -62,6 +63,8 @@ PHP_FUNCTION(runkit_zval_inspect)
 
 	addr_len = spprintf(&addr, 0, "0x%0lx", (long)value);
 	add_assoc_stringl(return_value, "address", addr, addr_len);
+	efree(addr);
+	addr = NULL;
 
 	if (Z_REFCOUNTED_P(value)) {
 		add_assoc_long(return_value, "refcount", Z_REFCOUNT_P(value));

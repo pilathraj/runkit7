@@ -22,4 +22,7 @@ Function Exists
 Function Removed
 runkitSample
 
-Fatal error: %s runkit%sample() in %s on line %d
+Fatal error: Uncaught Error: Call to undefined function runkit%sample() in %s:%d
+Stack trace:
+#0 {main}
+  thrown in %s on line %d

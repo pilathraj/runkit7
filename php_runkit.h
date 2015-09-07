@@ -231,7 +231,8 @@ int php_runkit_check_call_stack(zend_op_array *op_array TSRMLS_DC);
 void php_runkit_clear_all_functions_runtime_cache(TSRMLS_D);
 
 void php_runkit_remove_function_from_reflection_objects(zend_function *fe TSRMLS_DC);
-void php_runkit_function_copy_ctor(zend_function *fe, zend_string *newname TSRMLS_DC);
+// void php_runkit_function_copy_ctor(zend_function *fe, zend_string *newname TSRMLS_DC);
+zend_function* php_runkit_function_clone(zend_function *fe, zend_string *newname TSRMLS_DC);
 void php_runkit_function_dtor(zend_function *fe);
 int php_runkit_generate_lambda_method(const zend_string *arguments, const zend_string *phpcode,
                                       zend_function **pfe, zend_bool return_ref TSRMLS_DC);
@@ -572,6 +573,8 @@ void php_runkit_update_reflection_object_name(zend_object* object, int handle, c
 		} \
 	}
 
+	// These struct definitions must be identical to those in ext/reflection/php_reflection.c
+
 	/* Struct for properties */
 	typedef struct _property_reference {
 		zend_class_entry *ce;
@@ -589,23 +592,27 @@ void php_runkit_update_reflection_object_name(zend_object* object, int handle, c
 	typedef enum {
 		REF_TYPE_OTHER,      /* Must be 0 */
 		REF_TYPE_FUNCTION,
+		REF_TYPE_GENERATOR,
 		REF_TYPE_PARAMETER,
+		REF_TYPE_TYPE,
 		REF_TYPE_PROPERTY,
 		REF_TYPE_DYNAMIC_PROPERTY
 	} reflection_type_t;
 
 	/* Struct for reflection objects */
 	typedef struct {
-		zend_object zo;
+		zval dummy; /* holder for the second property */
+		zval obj;
 		void *ptr;
-		reflection_type_t ref_type;
-		zval *obj;
 		zend_class_entry *ce;
+		reflection_type_t ref_type;
 		unsigned int ignore_visibility:1;
+		zend_object zo;
 	} reflection_object;
 #endif /* PHP_RUNKIT_MANIPULATION */
 
-#if RUNKIT_ABOVE53
+#ifdef PHP_RUNKIT_SANDBOX
+// TODO: Figure out what the php7 equivalent of zend_object_store_bucket and zend_object_handle are.
 /* {{{ php_runkit_zend_object_store_get_obj */
 inline static zend_object_store_bucket *php_runkit_zend_object_store_get_obj(const zval *zobject TSRMLS_DC)
 {

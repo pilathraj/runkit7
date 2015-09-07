@@ -12,13 +12,9 @@ $a = 1;
 var_dump(runkit_zval_inspect($a));
 ?>
 --EXPECTF--
-array(4) {
+array(2) {
   ["address"]=>
   string(%d) "%s"
-  ["refcount"]=>
-  int(2)
-  ["is_ref"]=>
-  bool(false)
   ["type"]=>
-  int(1)
+  int(4)
 }

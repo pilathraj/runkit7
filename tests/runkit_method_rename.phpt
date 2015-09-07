@@ -44,4 +44,7 @@ Runkit Original: a is 2
 Runkit Original: a is 3
 Runkit Original: a is 4
 
-Fatal error: Call to undefined %s runkit_class::runkit%suplicate() in %s on line %d
+Fatal error: Uncaught Error: Call to undefined method runkit_class::runkit%suplicate() in %s:%d
+Stack trace:
+#0 {main}
+  thrown in %s on line %d

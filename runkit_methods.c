@@ -64,6 +64,7 @@ int php_runkit_fetch_class_int(zend_string* classname, zend_class_entry **pce TS
 		return FAILURE;
 	}
 
+	// TODO: Replace with ce = zend_lookup_class(classname or classname_lower)?
 	if ((ce = zend_hash_find_ptr(EG(class_table), classname_lower)) == NULL) {
 		zend_string_release(classname_lower);
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Class %s not found", ZSTR_VAL(classname));
@@ -285,6 +286,7 @@ static void php_runkit_method_add_or_update(INTERNAL_FUNCTION_PARAMETERS, int ad
 	zval *args;
 	long opt_arg_pos = 3;
 	zend_bool remove_temp = 0;
+	debug_printf("php_runkit_method_add_or_update\n");
 
 	if (argc < 2 || zend_parse_parameters_ex(ZEND_PARSE_PARAMS_QUIET, 2, "SS", &classname, &methodname) == FAILURE ||
 			!ZSTR_LEN(classname) || !ZSTR_LEN(methodname)) {
@@ -369,9 +371,7 @@ static void php_runkit_method_add_or_update(INTERNAL_FUNCTION_PARAMETERS, int ad
 		remove_temp = 1;
 	}
 
-	func = emalloc(sizeof(zend_function));
-	*func = *source_fe;
-	php_runkit_function_copy_ctor(func, methodname TSRMLS_CC);
+	func = php_runkit_function_clone(source_fe, methodname TSRMLS_CC);
 
 	if (flags & ZEND_ACC_PRIVATE) {
 		func->common.fn_flags &= ~ZEND_ACC_PPP_MASK;
@@ -472,9 +472,7 @@ static int php_runkit_method_copy(zend_string *dclass, zend_string* dfunc, zend_
 		}
 	}
 
-	dfe = emalloc(sizeof(zend_function));
-	*dfe = *sfe;
-	php_runkit_function_copy_ctor(dfe, dfunc TSRMLS_CC);
+	dfe = php_runkit_function_clone(sfe, dfunc TSRMLS_CC);
 
 	// TODO: Check if this is a memory leak.
 	if (zend_hash_add_ptr(&dce->function_table, dfunc_lower, dfe) == NULL) {
@@ -575,13 +573,12 @@ PHP_FUNCTION(runkit_method_remove)
 PHP_FUNCTION(runkit_method_rename)
 {
 	zend_class_entry *ce, *ancestor_class = NULL;
-	zend_function *fe, func, *old_fe;
+	zend_function *fe, *func, *old_fe;
 	zend_string* classname;
 	zend_string* methodname;
 	zend_string* newname;
 	zend_string* newname_lower;
 	zend_string* methodname_lower;
-	zval tmpVal;
 
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "SSS",	&classname, &methodname, &newname) == FAILURE) {
@@ -598,7 +595,7 @@ PHP_FUNCTION(runkit_method_rename)
 		RETURN_FALSE;
 	}
 
-	newname_lower = zend_string_tolower(methodname);
+	newname_lower = zend_string_tolower(newname);
 	if (newname_lower == NULL) {
 		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
 		RETURN_FALSE;
@@ -610,7 +607,7 @@ PHP_FUNCTION(runkit_method_rename)
 		RETURN_FALSE;
 	}
 
-	if ((old_fe = zend_hash_find_ptr(&ce->function_table, newname_lower)) == NULL) {
+	if ((old_fe = zend_hash_find_ptr(&ce->function_table, newname_lower)) != NULL) {
 		if (php_runkit_locate_scope(ce, old_fe, newname_lower) == ce) {
 			php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s::%s() already exists", ZSTR_VAL(classname), ZSTR_VAL(methodname));
 			zend_string_release(methodname_lower);
@@ -627,15 +624,13 @@ PHP_FUNCTION(runkit_method_rename)
 
 	php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
 
-	func = *fe;
-	php_runkit_function_copy_ctor(&func, newname TSRMLS_CC);
+	func = php_runkit_function_clone(fe, newname TSRMLS_CC);
 
-	ZVAL_FUNC(&tmpVal, &func);
-	if (zend_hash_add(&ce->function_table, newname_lower, &tmpVal) == NULL) {
+	if (zend_hash_add_ptr(&ce->function_table, newname_lower, func) == NULL) {
 		zend_string_release(newname_lower);
 		zend_string_release(methodname_lower);
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to add new reference to class method");
-		php_runkit_function_dtor(&func);
+		php_runkit_function_dtor(func);
 		RETURN_FALSE;
 	}
 
