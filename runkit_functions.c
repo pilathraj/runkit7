@@ -247,9 +247,12 @@ void php_runkit_function_copy_ctor(zend_function *fe, zend_string* newname TSRML
 				int k;
 
 				i--;
-				ZVAL_COPY_VALUE(&literals[i], &(fe->op_array.literals[i]));
-				debug_printf("Copying literal of type %d\n", (int) Z_TYPE(literals[i]));
 				// This code copies the zvals from the original function's op array to the new function's op array.
+				// TODO: Re-examine this line to see if reference counting was done properly.
+				// TODO: fix all of the other places old types of copies were used.
+				literals[i] = fe->op_array.literals[i];
+				Z_TRY_ADDREF(literals[i]);
+				printf("Copying literal of type %d\n", (int) Z_TYPE(literals[i]));
 				// TODO: Check if constants are being replaced properly.
 				// TODO: This may no longer do anything on 64-bit builds of PHP.
 				for (k=0; k < fe->op_array.last; k++) {
