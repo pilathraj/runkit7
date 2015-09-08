@@ -52,60 +52,47 @@ int php_runkit_check_call_stack(zend_op_array *op_array TSRMLS_DC)
 
 /* {{{ php_runkit_fetch_function
  */
-static int php_runkit_fetch_function(zend_string* fname, zend_function **pfe, int flag TSRMLS_DC)
+static zend_function* php_runkit_fetch_function(zend_string* fname, int flag TSRMLS_DC)
 {
-	zval * zvfe;
 	zend_function *fe;
 	zend_string* fname_lower;
 
 	fname_lower = zend_string_tolower(fname);
 	if (fname_lower == NULL) {
 		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-		return FAILURE;
+		return NULL;
 	}
 
-	if ((zvfe = zend_hash_find(EG(function_table), fname_lower)) == NULL) {
+	if ((fe = zend_hash_find_ptr(EG(function_table), fname_lower)) == NULL) {
 		zend_string_release(fname_lower);
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s() not found", ZSTR_VAL(fname));
-		return FAILURE;
+		return NULL;
 	}
-	if (Z_TYPE_P(zvfe) != IS_PTR) {
-		zend_string_release(fname_lower);
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s() found, but not a function(shouldn't happen)", ZSTR_VAL(fname));
-		return FAILURE;
-	}
-	fe = Z_FUNC_P(zvfe);
 
 	if (fe->type == ZEND_INTERNAL_FUNCTION &&
 		!RUNKIT_G(internal_override)) {
 		zend_string_release(fname_lower);
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s() is an internal function and runkit.internal_override is disabled", ZSTR_VAL(fname));
-		return FAILURE;
+		return NULL;
 	}
 
 	if (fe->type != ZEND_USER_FUNCTION &&
 		fe->type != ZEND_INTERNAL_FUNCTION) {
 		zend_string_release(fname_lower);
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s() is not a user or normal internal function", ZSTR_VAL(fname));
-		return FAILURE;
-	}
-
-	if (pfe) {
-		*pfe = fe;
+		return NULL;
 	}
 
 	if (fe->type == ZEND_INTERNAL_FUNCTION &&
 		flag >= PHP_RUNKIT_FETCH_FUNCTION_REMOVE) {
 		zend_string* runkit_key;
-		zval tmp;
 
 		if (!RUNKIT_G(replaced_internal_functions)) {
 			ALLOC_HASHTABLE(RUNKIT_G(replaced_internal_functions));
 			zend_hash_init(RUNKIT_G(replaced_internal_functions), 4, NULL, NULL, 0);
 		}
-		ZVAL_FUNC(&tmp, fe);
 		// FIXME figure out what this is intended to do (Restoring internal functions?)
-		zend_hash_add(RUNKIT_G(replaced_internal_functions), fname, &tmp);
+		zend_hash_add_ptr(RUNKIT_G(replaced_internal_functions), fname, fe);
 		/*
 		 * If internal functions have been modified then runkit's request shutdown handler
 		 * should be called after all other modules' ones.
@@ -117,7 +104,7 @@ static int php_runkit_fetch_function(zend_string* fname, zend_function **pfe, in
 	}
 	zend_string_release(fname_lower);
 
-	return SUCCESS;
+	return fe;
 }
 /* }}} */
 
@@ -494,6 +481,8 @@ int php_runkit_destroy_misplaced_functions(zval *zv TSRMLS_DC)
 		return ZEND_HASH_APPLY_REMOVE;
 	}
 
+	// TODO: Valgrind complained about invalid reads if this is called for an internal function such as val_dump
+	// Try to figure out how/when to properly delete functions, especially if references are shared.
 	zend_hash_del(EG(function_table), Z_STR_P(zv));
 
 	return ZEND_HASH_APPLY_REMOVE;
@@ -580,7 +569,7 @@ static void php_runkit_function_add_or_update(INTERNAL_FUNCTION_PARAMETERS, int 
 	efree(args);
 
 	if (add_or_update == HASH_UPDATE &&
-	    php_runkit_fetch_function(funcname, &orig_fe, PHP_RUNKIT_FETCH_FUNCTION_REMOVE TSRMLS_CC) == FAILURE) {
+	    (orig_fe = php_runkit_fetch_function(funcname, PHP_RUNKIT_FETCH_FUNCTION_REMOVE TSRMLS_CC)) == NULL) {
 		RETURN_FALSE;
 	}
 
@@ -677,7 +666,7 @@ PHP_FUNCTION(runkit_function_remove)
 	}
 
 	// TODO what?
-	if (php_runkit_fetch_function(fname, &fe, PHP_RUNKIT_FETCH_FUNCTION_REMOVE TSRMLS_CC) == FAILURE) {
+	if ((fe = php_runkit_fetch_function(fname, PHP_RUNKIT_FETCH_FUNCTION_REMOVE TSRMLS_CC)) == NULL) {
 		RETURN_FALSE;
 	}
 
@@ -749,9 +738,10 @@ static void record_misplaced_internal_function(zend_string* fname_lower) {
 PHP_FUNCTION(runkit_function_rename)
 {
 	zend_function *func, *sfe;
+	ZEND_RESULT_CODE deleted;
 	PHP_RUNKIT_FUNCTION_PARSE_RENAME_COPY_PARAMS;
 
-	if (php_runkit_fetch_function(sfunc, &sfe, PHP_RUNKIT_FETCH_FUNCTION_RENAME TSRMLS_CC) == FAILURE) {
+	if ((sfe = php_runkit_fetch_function(sfunc, PHP_RUNKIT_FETCH_FUNCTION_RENAME TSRMLS_CC)) == NULL) {
 		zend_string_release(dfunc_lower);
 		RETURN_FALSE;
 	}
@@ -765,7 +755,26 @@ PHP_FUNCTION(runkit_function_rename)
 
 	php_runkit_remove_function_from_reflection_objects(sfe TSRMLS_CC);
 
-	if (zend_hash_del(EG(function_table), sfunc_lower) == FAILURE) {
+	// TODO: Should I use clone instead?
+	// This may cause errors.
+	// TODO: this was calling the destructor of EG(function_table)
+	// I want to extract the function, and want this to not happen.
+	if (sfe->type == ZEND_INTERNAL_FUNCTION) {
+		func = sfe;
+	} else {
+		func = php_runkit_function_clone(sfe, dfunc TSRMLS_CC);
+	}
+
+	if (sfe == func) {
+		dtor_func_t orig = EG(function_table)->pDestructor;
+		EG(function_table)->pDestructor = NULL;
+		deleted = zend_hash_del(EG(function_table), sfunc_lower) == FAILURE;
+		EG(function_table)->pDestructor = orig;
+	} else {
+		deleted = zend_hash_del(EG(function_table), sfunc_lower) == FAILURE;
+	}
+
+	if (deleted) {
 		zend_string_release(dfunc_lower);
 		zend_string_release(sfunc_lower);
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Error removing reference to old function name %s()", ZSTR_VAL(sfunc));
@@ -773,27 +782,17 @@ PHP_FUNCTION(runkit_function_rename)
 	}
 	zend_string_release(sfunc_lower);
 
-	// TODO: Should I use clone instead?
-	// This may cause errors.
-	func = pemalloc(sizeof(zend_function), 1);
-	memcpy(func, sfe, sizeof(zend_function));
-	PHP_RUNKIT_FUNCTION_ADD_REF(func);  // TODO: Why call this?
-
-	if (func->type == ZEND_USER_FUNCTION) {
-		zend_string_release(func->common.function_name);
-		zend_string_addref(dfunc);
-		func->common.function_name = dfunc;
-	}
-
 	if (zend_hash_add_ptr(EG(function_table), dfunc_lower, func) == NULL) {
-		zval tmp;
 		zend_string_release(dfunc_lower);
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to add reference to new function name %s()", ZSTR_VAL(dfunc));
 		// TODO: I'm not sure if this line will delete the zvals/strings of the original function,
 		// which would cause segfaults.
 		// cloning might make more sense above.
-		ZVAL_FUNC(&tmp, func);
-		zend_function_dtor(&tmp);
+		if (func->type == ZEND_USER_FUNCTION) {
+			zval tmp;
+			ZVAL_FUNC(&tmp, func);
+			zend_function_dtor(&tmp);
+		}
 		RETURN_FALSE;
 	}
 
@@ -825,7 +824,7 @@ PHP_FUNCTION(runkit_function_copy)
 	zend_function *fe, *sfe;
 	PHP_RUNKIT_FUNCTION_PARSE_RENAME_COPY_PARAMS;
 
-	if (php_runkit_fetch_function(sfunc, &sfe, PHP_RUNKIT_FETCH_FUNCTION_INSPECT TSRMLS_CC) == FAILURE) {
+	if ((sfe = php_runkit_fetch_function(sfunc, PHP_RUNKIT_FETCH_FUNCTION_INSPECT TSRMLS_CC)) == NULL) {
 		zend_string_release(dfunc_lower);
 		RETURN_FALSE;
 	}
@@ -858,7 +857,8 @@ PHP_FUNCTION(runkit_function_copy)
 	}
 
 	zend_string_release(dfunc_lower);
-	zend_string_release(sfunc_lower);
+	// Ugh... zend_mm_heap corrupted when cleaning up the function_table. WHY?
+	//zend_string_release(sfunc_lower);
 
 	RETURN_TRUE;
 
