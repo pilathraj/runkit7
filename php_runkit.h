@@ -506,7 +506,7 @@ inline static void php_runkit_parse_doc_comment_arg(int argc, zval *args, int ar
 	if (argc > arg_pos) {
 		if (Z_TYPE(args[arg_pos]) == IS_STRING) {
 			*pdoc_comment = Z_STR(args[arg_pos]);
-		} else if (Z_TYPE(args[arg_pos])) {
+		} else if (Z_TYPE(args[arg_pos]) != IS_NULL) {
 			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Doc comment should be a string or NULL");
 		}
 	}
