@@ -28,18 +28,19 @@
 static inline void php_runkit_make_object_property_public(zend_string *propname, zend_object *object, int offset, zend_property_info *property_info_ptr TSRMLS_DC) {
 	zval *prop_val = NULL;
 	if (!object->properties) {
-		prop_val = object->properties_table[offset];
+		prop_val = &object->properties_table[offset];
 		rebuild_object_properties(object);
 	} else if (object->properties_table[offset]) {
-		prop_val = *(zval **) object->properties_table[offset];
+		prop_val = &object->properties_table[offset];
 	}
 	if ((property_info_ptr->flags & (ZEND_ACC_PRIVATE | ZEND_ACC_PROTECTED | ZEND_ACC_SHADOW)) && prop_val) {
-		Z_ADDREF_P(prop_val);
+		// TODO: should these references be shared?
+		Z_TRY_ADDREF_P(prop_val);
 		if (h != property_info_ptr->h) {
-			zend_hash_quick_del(object->properties, property_info_ptr->name, property_info_ptr->name_length+1, property_info_ptr->h);
+			zend_hash_del(object->properties, property_info_ptr->name, property_info_ptr->h);
 		}
-		zend_hash_update(object->properties, propname,
-				 &prop_val, sizeof(zval *), (void *) &object->properties_table[offset]);
+		// TODO: This is probably going to cause a segfault.
+		zend_hash_update(object->properties, propname, prop_val);
 		php_error_docref(NULL TSRMLS_CC, E_NOTICE, "Making %s::%s public to remove it "
 				 "from class without objects overriding", ZSTR_VAL(object->ce->name), ZSTR_VAL(propname));
 	}

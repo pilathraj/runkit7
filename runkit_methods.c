@@ -42,7 +42,6 @@ static inline zend_function* _php_runkit_get_method_prototype(zend_class_entry *
 }
 /* }}} */
 
-
 /* {{{ php_runkit_fetch_class_int
  */
 int php_runkit_fetch_class_int(zend_string* classname, zend_class_entry **pce TSRMLS_DC)
@@ -176,12 +175,15 @@ static int php_runkit_fetch_class_method(zend_string* classname, zend_string* fn
 }
 /* }}} */
 
+/* {{{ php_runkit_update_children_methods_foreach */
 void php_runkit_update_children_methods_foreach(RUNKIT_53_TSRMLS_ARG(HashTable *ht), zend_class_entry *ancestor_class, zend_class_entry *parent_class, zend_function *fe, zend_string *fname_lower, zend_function *orig_fe) {
 	zend_class_entry *ce;
 	ZEND_HASH_FOREACH_PTR(ht, ce) {
 		php_runkit_update_children_methods(ce, ancestor_class, parent_class, fe, fname_lower, orig_fe);
 	} ZEND_HASH_FOREACH_END();
 }
+/* }}} */
+
 /* {{{ php_runkit_update_children_methods
 	Scan the class_table for children of the class just updated */
 void php_runkit_update_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), zend_class_entry *ancestor_class, zend_class_entry *parent_class, zend_function *fe, zend_string *fname_lower, zend_function *orig_fe) {
@@ -231,12 +233,15 @@ void php_runkit_update_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *c
 }
 /* }}} */
 
-static void php_runkit_clean_children_methods_foreach(RUNKIT_53_TSRMLS_ARG(HashTable *ht), zend_class_entry *ancestor_class, zend_class_entry *parent_class, zend_string *fname_lower, zend_function *orig_cfe) {
+/* {{{ php_runkit_clean_children_methods_foreach */
+void php_runkit_clean_children_methods_foreach(RUNKIT_53_TSRMLS_ARG(HashTable *ht), zend_class_entry *ancestor_class, zend_class_entry *parent_class, zend_string *fname_lower, zend_function *orig_cfe) {
 	zend_class_entry *ce;
 	ZEND_HASH_FOREACH_PTR(ht, ce) {
 		php_runkit_clean_children_methods(RUNKIT_53_TSRMLS_ARG(ce), ancestor_class, parent_class, fname_lower, orig_cfe);
 	} ZEND_HASH_FOREACH_END();
 }
+/* }}} */
+
 /* {{{ php_runkit_clean_children
 	Scan the class_table for children of the class just updated */
 void php_runkit_clean_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), zend_class_entry *ancestor_class, zend_class_entry *parent_class, zend_string *fname_lower, zend_function *orig_cfe)

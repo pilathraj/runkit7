@@ -44,6 +44,9 @@ $a = new Test_GrandChild;
 echo "==DONE==\n";
 ?>
 --EXPECT--
+Deprecated: Methods with the same name as their class will not be constructors in a future version of PHP; %s has a deprecated constructor in %s on line %d
+
+Deprecated: Methods with the same name as their class will not be constructors in a future version of PHP; %s has a deprecated constructor in %s on line %d
 string(15) "new constructor"
 string(13) "foo_test ctor"
 string(13) "foo_test ctor"

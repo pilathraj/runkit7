@@ -100,7 +100,6 @@ inline static void php_runkit_sandbox_call_int(zval *func_name, char **pname, zv
 		MAKE_STD_ZVAL(*sandbox_args[i]);
 		**sandbox_args[i] = **tmpzval;
 
-#if RUNKIT_ABOVE53
 		if (Z_TYPE_P(*sandbox_args[i]) == IS_OBJECT && zend_get_class_entry(*sandbox_args[i], prior_context) == zend_ce_closure) {
 			zend_closure *closure;
 			zend_object_store_bucket *bucket;
@@ -108,7 +107,6 @@ inline static void php_runkit_sandbox_call_int(zval *func_name, char **pname, zv
 			closure = (zend_closure *) bucket->bucket.obj.object;
 			(*sandbox_args[i])->value.obj.handle = zend_objects_store_put(closure, NULL, NULL, bucket->bucket.obj.clone TSRMLS_CC);
 		} else
-#endif
 			PHP_SANDBOX_CROSS_SCOPE_ZVAL_COPY_CTOR(*sandbox_args[i]);
 	}
 
@@ -135,14 +133,12 @@ inline static void php_runkit_sandbox_call_int(zval *func_name, char **pname, zv
 	}
 
 	for(i = 0; i < argc; i++) {
-#if RUNKIT_ABOVE53
 		if (Z_TYPE_P(*sandbox_args[i]) == IS_OBJECT && zend_get_class_entry(*sandbox_args[i] TSRMLS_CC) == zend_ce_closure) {
 			zend_object_store_bucket *bucket = php_runkit_zend_object_store_get_obj(*sandbox_args[i] TSRMLS_CC);
 			zend_objects_store_del_ref(*sandbox_args[i] TSRMLS_CC);
 			zval_ptr_dtor(sandbox_args[i]);
 			bucket->bucket.obj.object = NULL;
 		}
-#endif
 		zval_ptr_dtor(sandbox_args[i]);
 		efree(sandbox_args[i]);
 	}

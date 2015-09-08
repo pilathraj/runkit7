@@ -24,12 +24,24 @@
 
 #ifdef PHP_RUNKIT_MANIPULATION
 #ifdef PHP_RUNKIT_MANIPULATION_PROPERTIES
+/* {{{ php_runkit_remove_inherited_methods_foreach */
+// Remove methods that were inherited from class ce from the function_table.
+static int php_runkit_remove_inherited_methods(zval *pDest, void *argument TSRMLS_DC); // forward declare.
+static void php_runkit_remove_inherited_methods_foreach(HashTable *function_table, zend_class_entry *ce TSRMLS_DC) {
+	zend_hash_apply_with_argument(function_table, php_runkit_remove_inherited_methods, ce TSRMLS_CC);
+}
+
+/* }}} */
+
 /* {{{ php_runkit_remove_inherited_methods */
-static int php_runkit_remove_inherited_methods(zend_function *fe, zend_class_entry *ce TSRMLS_DC)
+static int php_runkit_remove_inherited_methods(zval *pDest, void *argument TSRMLS_DC)
 {
+	zend_function *fe = Z_FUNC_P(pDest);
+	zend_class_entry *ce = (zend_class_entry*) argument;
 	zend_string * const fname = fe->common.function_name;
 	zend_string *fname_lower;
 	zend_class_entry *ancestor_class;
+	ZEND_ASSERT(Z_TYPE_INFO_P(pDest) == IS_PTR);
 
 	fname_lower = zend_string_tolower(fname);
 	if (fname_lower == NULL) {
@@ -124,6 +136,17 @@ PHP_FUNCTION(runkit_class_emancipate)
 	ce->parent = NULL;
 
 	RETURN_TRUE;
+}
+/* }}} */
+
+/* {{{ php_runkit_inherit_methods_foreach
+    Inherit methods from a new ancestor (in function_table) */
+static int php_runkit_inherit_methods(zend_function *fe, zend_class_entry *ce TSRMLS_DC);
+static void php_runkit_inherit_methods_foreach(HashTable *function_table, zend_class_entry *ce TSRMLS_DC) {
+	zend_function *fe;
+	ZEND_HASH_FOREACH_PTR(function_table, fe) {
+		php_runkit_inherit_methods(fe, ce);
+	} ZEND_HASH_FOREACH_END();
 }
 /* }}} */
 

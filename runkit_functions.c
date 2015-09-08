@@ -121,16 +121,20 @@ static int php_runkit_fetch_function(zend_string* fname, zend_function **pfe, in
 }
 /* }}} */
 
-static void runkit_set_opcode_constant(zval* literals, znode_op op, zval* literalI) {
-	debug_printf("runkit_set_opcode_constant(%llx, %llx, %d)", (long long)literals, (long long)literalI, (int)sizeof(zval));
+/** {{{ php_runkit_set_opcode_constant
+  	    for absolute constant addresses, creates a local copy of that literal */
+static void php_runkit_set_opcode_constant(zval* literals, znode_op op, zval* literalI) {
+	debug_printf("php_runkit_set_opcode_constant(%llx, %llx, %d)", (long long)literals, (long long)literalI, (int)sizeof(zval));
 	// TODO: ZEND_PASS_TWO_UPDATE_CONSTANT???
 #if ZEND_USE_ABS_CONST_ADDR
 	RT_CONSTANT_EX(literals, op) = literalI;
 #else
 	// TODO: Assert that this is in a meaningful range.
+	// TODO: is this ever necessary for relative constant addresses?
 	op.constant = literalI - literals;
 #endif
 }
+/* }}} */
 
 /* {{{ php_runkit_function_copy_ctor
 	Duplicate structures in an op_array where necessary to make an outright duplicate */
@@ -267,11 +271,11 @@ void php_runkit_function_copy_ctor(zend_function *fe, zend_string* newname TSRML
 					// TODO: This may be completely unnecessary on 64-bit systems. This may be broken on 32-bit systems.
 					if (opcode_copy[k].op1_type == IS_CONST && RT_CONSTANT_EX(literals, opcode_copy[k].op1) == &fe->op_array.literals[i]) {
 						printf("Setting opcode constant?\n");
-						runkit_set_opcode_constant(literals, opcode_copy[k].op1, &literals[i]);
+						php_runkit_set_opcode_constant(literals, opcode_copy[k].op1, &literals[i]);
 					}
 					if (opcode_copy[k].op2_type == IS_CONST && RT_CONSTANT_EX(literals, opcode_copy[k].op2) == &fe->op_array.literals[i]) {
 						printf("Setting opcode constant?\n");
-						runkit_set_opcode_constant(literals, opcode_copy[k].op2, &literals[i]);
+						php_runkit_set_opcode_constant(literals, opcode_copy[k].op2, &literals[i]);
 					}
 				}
 			}
@@ -308,8 +312,9 @@ void php_runkit_function_copy_ctor(zend_function *fe, zend_string* newname TSRML
 }
 /* }}} */
 
-// Makes a duplicate of fe that doesn't share any static variables, zvals, etc.
-// TODO: Is there anything I can use from zend_duplicate_function?
+/* {{{ php_runkit_function_clone
+   Makes a duplicate of fe that doesn't share any static variables, zvals, etc.
+   TODO: Is there anything I can use from zend_duplicate_function? */
 zend_function* php_runkit_function_clone(zend_function *fe, zend_string *newname TSRMLS_DC) {
 	// Make a persistent allocation.
 	// TODO: Clean it up after a request?
@@ -318,6 +323,7 @@ zend_function* php_runkit_function_clone(zend_function *fe, zend_string *newname
 	php_runkit_function_copy_ctor(new_function, newname TSRMLS_CC);
 	return new_function;
 }
+/* }}} */
 
 /* {{{ php_runkit_function_dtor */
 void php_runkit_function_dtor(zend_function *fe TSRMLS_DC) {
@@ -386,6 +392,7 @@ void php_runkit_clear_all_functions_runtime_cache(TSRMLS_D)
 }
 /* }}} */
 
+/* {{{ php_runkit_update_reflection_object_name */
 void php_runkit_update_reflection_object_name(zend_object* object, int handle, const char* name) {
 	zval obj, zvname, zvnew_name;
 	ZVAL_OBJ(&obj, object);
@@ -395,11 +402,14 @@ void php_runkit_update_reflection_object_name(zend_object* object, int handle, c
 	// TODO: assign this.
 	zend_std_write_property(&obj, &zvname, &zvnew_name, NULL TSRMLS_CC);
 }
+/* }}} */
 
-// Copied from ext/reflection/php_reflection.c
+/* {{{ reflection_object_from_obj
+   Copied from ext/reflection/php_reflection.c */
 static inline reflection_object *reflection_object_from_obj(zend_object *obj) {
 	return (reflection_object*)((char*)(obj) - XtOffsetOf(reflection_object, zo));
 }
+/* }}} */
 
 /* {{{ php_runkit_remove_function_from_reflection_objects */
 void php_runkit_remove_function_from_reflection_objects(zend_function *fe TSRMLS_DC) {
@@ -688,6 +698,7 @@ PHP_FUNCTION(runkit_function_remove)
 }
 /* }}} */
 
+/* {{{ PHP_RUNKIT_FUNCTION_PARSE_RENAME_COPY_PARAMS */
 #define PHP_RUNKIT_FUNCTION_PARSE_RENAME_COPY_PARAMS \
 	zend_string *sfunc; \
 	zend_string *dfunc; \
@@ -713,20 +724,25 @@ PHP_FUNCTION(runkit_function_remove)
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s() already exists", ZSTR_VAL(dfunc)); \
 		RETURN_FALSE; \
 	}
+/* }}} */
 
+/* {{{ ensure_misplaced_internal_functions_table_exists */
 static void ensure_misplaced_internal_functions_table_exists() {
 	if (!RUNKIT_G(misplaced_internal_functions)) {
 		ALLOC_HASHTABLE(RUNKIT_G(misplaced_internal_functions));
 		zend_hash_init(RUNKIT_G(misplaced_internal_functions), 4, NULL, NULL, 0);
 	}
 }
+/* }}} */
 
+/* {{{record_misplaced_internal_function */
 static void record_misplaced_internal_function(zend_string* fname_lower) {
 	zval tmp;
 	ZVAL_STR(&tmp, fname_lower);
 	ensure_misplaced_internal_functions_table_exists();
 	zend_hash_next_index_insert(RUNKIT_G(misplaced_internal_functions), &tmp);
 }
+/* }}} */
 
 /* {{{ proto bool runkit_function_rename(string funcname, string newname)
  */

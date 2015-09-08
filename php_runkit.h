@@ -182,8 +182,6 @@ extern ZEND_DECLARE_MODULE_GLOBALS(runkit);
 #define RUNKIT_53_TSRMLS_PARAM(param)           (param) TSRMLS_CC
 #define RUNKIT_53_TSRMLS_ARG(arg)               arg TSRMLS_DC
 
-#define RUNKIT_ABOVE56                          1
-
 #ifdef ZEND_ACC_RETURN_REFERENCE
 #     define PHP_RUNKIT_ACC_RETURN_REFERENCE         ZEND_ACC_RETURN_REFERENCE
 #else
@@ -244,6 +242,7 @@ int php_runkit_clean_zval(zval **val TSRMLS_DC);
 int php_runkit_fetch_class(zend_string* classname, zend_class_entry **pce TSRMLS_DC);
 int php_runkit_fetch_class_int(zend_string *classname, zend_class_entry **pce TSRMLS_DC);
 void php_runkit_clean_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), zend_class_entry *ancestor_class, zend_class_entry *parent_class, zend_string *fname_lower, zend_function *orig_cfe);
+void php_runkit_clean_children_methods_foreach(RUNKIT_53_TSRMLS_ARG(HashTable *ht), zend_class_entry *ancestor_class, zend_class_entry *parent_class, zend_string *fname_lower, zend_function *orig_cfe);
 void php_runkit_update_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), zend_class_entry *ancestor_class, zend_class_entry *parent_class, zend_function *fe, zend_string *fname_lower, zend_function *orig_fe);
 void php_runkit_update_children_methods_foreach(RUNKIT_53_TSRMLS_ARG(HashTable *ht), zend_class_entry *ancestor_class, zend_class_entry *parent_class, zend_function *fe, zend_string *fname_lower, zend_function *orig_fe);
 int php_runkit_fetch_interface(zend_string *classname, zend_class_entry **pce TSRMLS_DC);
@@ -460,15 +459,9 @@ inline static void PHP_RUNKIT_DEL_MAGIC_METHOD(zend_class_entry *ce, const zend_
 	else if ((ce)->__unset == (fe))           (ce)->__unset          = NULL;
 	else if ((ce)->__isset == (fe))           (ce)->__isset          = NULL;
 	else if ((ce)->__call == (fe))            (ce)->__call           = NULL;
-#if RUNKIT_ABOVE53
 	else if ((ce)->__callstatic == (fe))      (ce)->__callstatic     = NULL;
-#endif
-#if PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 2 || PHP_MAJOR_VERSION > 5
 	else if ((ce)->__tostring == (fe))        (ce)->__tostring       = NULL;
-#endif
-#if RUNKIT_ABOVE56
 	else if ((ce)->__debugInfo == (fe))       (ce)->__debugInfo      = NULL;
-#endif
 	else if ((ce)->clone == (fe))             (ce)->clone            = NULL;
 	else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) && (ce)->serialize_func == (fe))
 		(ce)->serialize_func   = NULL;
