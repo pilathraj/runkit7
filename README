@@ -4,6 +4,8 @@ Runkit7: Runkit extension fork for PHP 7
 For all those things you.... probably shouldn't have been doing anyway....
 __Now with partial support for PHP7!__ (This extension isn't production ready yet).
 
+[Building and installing runkit in unix (64-bit PHP7 only)](#building-and-installing-runkit7-in-unix-php7)
+
 The following contributions are welcome:
 
 -	Pull requests with  PHP5 -> PHP7 code migration of functions
@@ -250,7 +252,8 @@ phpize
 ./configure --disable-runkit-sandbox --disable-runkit-super
 make
 make test
-sudo make install
+# If you know how to uninstall this:
+# sudo make install
 ```
 
 
