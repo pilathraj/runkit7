@@ -23,18 +23,6 @@
 
 #ifdef PHP_RUNKIT_MANIPULATION_CONSTANTS
 // Copied from zend_compile.c, RC2
-static void *runkit_zend_hash_find_ptr_lc(HashTable *ht, const char *str, size_t len) {
-	void *result;
-	zend_string *lcname;
-	ALLOCA_FLAG(use_heap);
-
-	ZSTR_ALLOCA_ALLOC(lcname, len, use_heap);
-	zend_str_tolower_copy(ZSTR_VAL(lcname), str, len);
-	result = zend_hash_find_ptr(ht, lcname);
-	ZSTR_ALLOCA_FREE(lcname, use_heap);
-
-	return result;
-}
 /* {{{ php_runkit_fetch_const
  */
 static int php_runkit_fetch_const(zend_string *cname_zs, zend_constant **constant, char **found_cname TSRMLS_DC)
@@ -65,7 +53,7 @@ static int php_runkit_fetch_const(zend_string *cname_zs, zend_constant **constan
 		cname = lcase;
 	}
 	// TODO: Figure out how to extract from zend_constants
-	if ((*constant = runkit_zend_hash_find_ptr_lc(EG(zend_constants), cname, cname_len + 1)) == NULL) {
+	if ((*constant = zend_hash_str_find_ptr(EG(zend_constants), cname, cname_len)) == NULL) {
 		if (!lcase) {
 			lcase = estrndup(cname, cname_len);
 			zend_str_tolower(lcase, cname_len);
@@ -73,7 +61,7 @@ static int php_runkit_fetch_const(zend_string *cname_zs, zend_constant **constan
 			zend_str_tolower(lcase + cname_len - constant_name_len, constant_name_len);
 		}
 		cname = lcase;
-		if ((*constant = runkit_zend_hash_find_ptr_lc(EG(zend_constants), cname, cname_len)) == NULL || ((*constant)->flags & CONST_CS)) {
+		if ((*constant = zend_hash_str_find_ptr(EG(zend_constants), cname, cname_len)) == NULL || ((*constant)->flags & CONST_CS)) {
 			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Constant %s not found", old_cname);
 			efree(lcase);
 			return FAILURE;
