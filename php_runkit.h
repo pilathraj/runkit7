@@ -38,22 +38,25 @@
 
 #include "Zend/zend_interfaces.h"
 
-// #define debug_printf(...) printf(__VA_ARGS__)
-#define debug_printf(...) do { } while(0)
+// #define DEBUGGING
+#ifdef DEBUGGING
+#define debug_printf(...) printf(__VA_ARGS__)
 static inline void* _debug_emalloc(void* data, int bytes, char* file, int line) {
 	debug_printf("%llx: Wrapped emalloc %d bytes, %s:%d\n", (long long) data, bytes, file, line);
 	return data;
 }
-// #undef emalloc
-// #define emalloc(size) _debug_emalloc(_emalloc((size) ZEND_FILE_LINE_CC ZEND_FILE_LINE_EMPTY_CC), (size), __FILE__, __LINE__)
-// #define zend_string_release(s) do{ debug_printf("%llx: Pretending to zend_string_release %s\n", (long long) (s), ZSTR_VAL((s)));} while(0)
+#undef emalloc
+#define emalloc(size) _debug_emalloc(_emalloc((size) ZEND_FILE_LINE_CC ZEND_FILE_LINE_EMPTY_CC), (size), __FILE__, __LINE__)
+#define zend_string_release(s) do{ debug_printf("%llx: Pretending to zend_string_release %s\n", (long long) (s), ZSTR_VAL((s)));} while(0)
 
-// I've confirmed that this was freeing something that it shouldn't have.
-// This was causing things to crash afterwards.
-// #undef efree
-// #undef pefree
-// #define efree(m) do {debug_printf("%llx: efree at %s:%d\n", (long long) (m), __FILE__, __LINE__); _efree((m) ZEND_FILE_LINE_CC ZEND_FILE_LINE_EMPTY_CC); } while(0)
-// #define pefree(m, persistent) do {if ((persistent)) {debug_printf("%llx: (pe)free at %s:%d\n", (long long) (m), __FILE__, __LINE__); free((m));} else { efree(m); }} while(0)
+#undef efree
+#undef pefree
+#define efree(m) do {debug_printf("%llx: efree at %s:%d\n", (long long) (m), __FILE__, __LINE__); _efree((m) ZEND_FILE_LINE_CC ZEND_FILE_LINE_EMPTY_CC); } while(0)
+#define pefree(m, persistent) do {if ((persistent)) {debug_printf("%llx: (pe)free at %s:%d\n", (long long) (m), __FILE__, __LINE__); free((m));} else { efree(m); }} while(0)
+#else
+#define debug_printf(...) do { } while(0)
+#endif
+
 #define PHP_RUNKIT_VERSION					"1.0.4-dev"
 #define PHP_RUNKIT_SANDBOX_CLASSNAME		"Runkit_Sandbox"
 #define PHP_RUNKIT_SANDBOX_PARENT_CLASSNAME	"Runkit_Sandbox_Parent"
