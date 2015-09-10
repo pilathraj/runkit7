@@ -92,7 +92,6 @@ static inline void* _debug_emalloc(void* data, int bytes, char* file, int line) 
 // TODO: Enable these macros once the corresponding functions/files compile and pass some of the tests.
 // TODO: Clean up these macros once the corresponding functions/files are 100% correct.
 // #define PHP_RUNKIT_MANIPULATION_IMPORT
-// #define PHP_RUNKIT_MANIPULATION_CONSTANTS
 // #define PHP_RUNKIT_MANIPULATION_PROPERTIES
 #endif
 
@@ -123,11 +122,9 @@ PHP_FUNCTION(runkit_method_redefine);
 PHP_FUNCTION(runkit_method_remove);
 PHP_FUNCTION(runkit_method_rename);
 PHP_FUNCTION(runkit_method_copy);
-#ifdef PHP_RUNKIT_MANIPULATION_CONSTANTS
 PHP_FUNCTION(runkit_constant_redefine);
 PHP_FUNCTION(runkit_constant_remove);
 PHP_FUNCTION(runkit_constant_add);
-#endif
 #ifdef PHP_RUNKIT_MANIPULATION_PROPERTIES
 PHP_FUNCTION(runkit_default_property_add);
 PHP_FUNCTION(runkit_default_property_remove);
@@ -261,9 +258,7 @@ int php_runkit_fetch_interface(zend_string *classname, zend_class_entry **pce TS
 #define PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR php_error_docref(NULL TSRMLS_CC, E_ERROR, "Not enough memory")
 
 /* runkit_constants.c */
-#ifdef PHP_RUNKIT_MANIPULATION_CONSTANTS
-int php_runkit_update_children_consts(RUNKIT_53_TSRMLS_ARG(zval *pDest), int num_args, va_list args, zend_hash_key *hash_key);
-#endif
+void php_runkit_update_children_consts(zend_class_entry *ce, zend_class_entry *parent_class, zval *c, zend_string *cname);
 
 /* runkit_classes.c */
 int php_runkit_class_copy(zend_class_entry *src, zend_string *classname TSRMLS_DC);
@@ -403,18 +398,23 @@ struct _php_runkit_sandbox_object {
 
 #ifdef PHP_RUNKIT_MANIPULATION
 
-#define PHP_RUNKIT_SPLIT_PN(classname, pnname) _PHP_RUNKIT_SPLIT_PN(&classname, &pnname)
-inline static void _PHP_RUNKIT_SPLIT_PN(zend_string **classname, zend_string **pnname) {
-	char *colon;
-
-	// FIXME: Need to correctly do reference tracking for the original and created strings.
-	if (ZSTR_LEN(*pnname) > 3 && (colon = memchr(ZSTR_VAL(*pnname), ':', ZSTR_LEN(*pnname) - 2)) && (colon[1] == ':')) {
-		*classname = zend_string_init(ZSTR_VAL(*pnname), colon - ZSTR_VAL(*pnname), 0);
-		*pnname = zend_string_init(colon, ZSTR_LEN(*pnname) - (ZSTR_LEN(*classname) + 2), 0);
-	} else {
-		*classname = NULL;
-	}
+// FIXME: Need to correctly do reference tracking for the original and created strings.
+#define PHP_RUNKIT_SPLIT_PN(classname, pnname) { \
+	char *colon; \
+	if (ZSTR_LEN(pnname) > 3 && (colon = memchr(ZSTR_VAL(pnname), ':', ZSTR_LEN(pnname) - 2)) && (colon[1] == ':')) { \
+		classname = zend_string_init(ZSTR_VAL(pnname), colon - ZSTR_VAL(pnname), 0); \
+		pnname = zend_string_init(colon + 2, ZSTR_LEN(pnname) - (ZSTR_LEN(classname) + 2), 0); \
+	} else { \
+		classname = NULL; \
+	} \
 }
+
+// If the input string was split into two allocated zend_strings, then decrement the refcount of both of those strings.
+#define PHP_RUNKIT_SPLIT_PN_CLEANUP(classname, pnname) \
+	if (classname != NULL) { \
+		zend_string_release(classname); \
+		zend_string_release(constname); \
+	}
 
 inline static void PHP_RUNKIT_ADD_MAGIC_METHOD(zend_class_entry *ce, zend_string* lcmname, zend_function *fe, const zend_function *orig_fe TSRMLS_DC) {
 	if (zend_string_equals_literal(lcmname, ZEND_CLONE_FUNC_NAME)) {

@@ -21,7 +21,7 @@
 
 #include "php_runkit.h"
 
-#ifdef PHP_RUNKIT_MANIPULATION_CONSTANTS
+#ifdef PHP_RUNKIT_MANIPULATION
 // Copied from zend_compile.c, RC2
 /* {{{ php_runkit_fetch_const
  */
@@ -75,36 +75,34 @@ static int php_runkit_fetch_const(zend_string *cname_zs, zend_constant **constan
 }
 /* }}} */
 
+/* {{{ php_runkit_update_children_consts_foreach
+	Scans each element of the hash table */
+static void php_runkit_update_children_consts_foreach(HashTable *ht, zend_class_entry *parent_class, zval *c, zend_string *cname)
+{
+	zend_class_entry *ce;
+	ZEND_HASH_FOREACH_PTR(ht, ce) {
+		php_runkit_update_children_consts(ce, parent_class, c, cname);
+	} ZEND_HASH_FOREACH_END();
+}
 /* {{{ php_runkit_update_children_consts
 	Scan the class_table for children of the class just updated */
-int php_runkit_update_children_consts(RUNKIT_53_TSRMLS_ARG(zval *pDest), int num_args, va_list args, zend_hash_key *hash_key)
+void php_runkit_update_children_consts(zend_class_entry *ce, zend_class_entry *parent_class, zval *c, zend_string *cname)
 {
-	// TODO: Assert type is IS_PTR or the CE internal type
-
-	zend_class_entry *ce = Z_CE_P(pDest);
-	zend_class_entry *parent_class =  va_arg(args, zend_class_entry*);
-	zval *c = va_arg(args, zval*);
-	zend_string* cname = va_arg(args, zend_string*);
-
-	ce = *((zend_class_entry**)ce);
-
 	if (ce->parent != parent_class) {
 		/* Not a child, ignore */
-		return ZEND_HASH_APPLY_KEEP;
+		return;
 	}
 
 	/* Process children of this child */
-	zend_hash_apply_with_arguments(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), php_runkit_update_children_consts, 3, ce, c, cname);
+	php_runkit_update_children_consts_foreach(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), ce, c, cname);
 
-	Z_ADDREF_P(c);
+	Z_TRY_ADDREF_P(c);
 
 	zend_hash_del(&ce->constants_table, cname);
 	if (zend_hash_add(&ce->constants_table, cname, c) == NULL) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Error updating child class");
-		return ZEND_HASH_APPLY_KEEP;
+		return;
 	}
-
-	return ZEND_HASH_APPLY_KEEP;
 }
 /* }}} */
 
@@ -161,7 +159,6 @@ static int php_runkit_constant_remove(zend_string* classname, zend_string* const
 static int php_runkit_constant_add(zend_string* classname, zend_string* constname, zval *value TSRMLS_DC)
 {
 	zend_class_entry *ce;
-	zval copyval;
 
 	switch (Z_TYPE_P(value)) {
 		case IS_LONG:
@@ -200,17 +197,17 @@ static int php_runkit_constant_add(zend_string* classname, zend_string* constnam
 		return FAILURE;
 	}
 
-	copyval = *value;
-	zval_copy_ctor(&copyval);
-	if (zend_hash_add(&ce->constants_table, constname, &copyval) == NULL) {
+	// TODO: Is this too many references?
+	Z_TRY_ADDREF_P(value);
+	if (zend_hash_add(&ce->constants_table, constname, value) == NULL) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to add constant to class definition");
-		zval_ptr_dtor(&copyval);
+		Z_TRY_DELREF_P(value);
 		return FAILURE;
 	}
 
 	php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
 
-	zend_hash_apply_with_arguments(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), (apply_func_args_t)php_runkit_update_children_consts, 3, ce, &copyval, constname);
+	php_runkit_update_children_consts_foreach(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), ce, value, constname);
 
 	return SUCCESS;
 }
@@ -226,6 +223,7 @@ PHP_FUNCTION(runkit_constant_redefine)
 {
 	zend_string *classname, *constname;
 	zval *value;
+	ZEND_RESULT_CODE result;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "Sz", &constname, &value) == FAILURE) {
 		RETURN_FALSE;
@@ -234,7 +232,9 @@ PHP_FUNCTION(runkit_constant_redefine)
 	PHP_RUNKIT_SPLIT_PN(classname, constname);
 
 	php_runkit_constant_remove(classname, constname TSRMLS_CC);
-	RETURN_BOOL(php_runkit_constant_add(classname, constname, value TSRMLS_CC) == SUCCESS);
+	result = php_runkit_constant_add(classname, constname, value TSRMLS_CC) == SUCCESS;
+	PHP_RUNKIT_SPLIT_PN_CLEANUP(classname, constname);
+	RETURN_BOOL(result);
 }
 /* }}} */
 
@@ -243,6 +243,7 @@ PHP_FUNCTION(runkit_constant_redefine)
 PHP_FUNCTION(runkit_constant_remove)
 {
 	zend_string *classname, *constname;
+	ZEND_RESULT_CODE result;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "S", &constname) == FAILURE) {
 		RETURN_FALSE;
@@ -250,8 +251,9 @@ PHP_FUNCTION(runkit_constant_remove)
 
 	PHP_RUNKIT_SPLIT_PN(classname, constname);
 
-	// TODO: memory management here, and everywhere else using PHP_RUNKIT_SPLIT_PN
-	RETURN_BOOL(php_runkit_constant_remove(classname, constname TSRMLS_CC)==SUCCESS);
+	result = php_runkit_constant_remove(classname, constname TSRMLS_CC) == SUCCESS;
+	PHP_RUNKIT_SPLIT_PN_CLEANUP(classname, constname)
+	RETURN_BOOL(result);
 }
 /* }}} */
 
@@ -262,17 +264,19 @@ PHP_FUNCTION(runkit_constant_add)
 {
 	zend_string *classname, *constname;
 	zval *value;
+	ZEND_RESULT_CODE result;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "Sz", &constname, &value) == FAILURE) {
 		RETURN_FALSE;
 	}
 
 	PHP_RUNKIT_SPLIT_PN(classname, constname);
-
-	RETURN_BOOL(php_runkit_constant_add(classname, constname, value TSRMLS_CC) == SUCCESS);
+	result = php_runkit_constant_add(classname, constname, value TSRMLS_CC) == SUCCESS;
+	PHP_RUNKIT_SPLIT_PN_CLEANUP(classname, constname);
+	RETURN_BOOL(result);
 }
 /* }}} */
-#endif /* PHP_RUNKIT_MANIPULATION_CONSTANTS */
+#endif /* PHP_RUNKIT_MANIPULATION */
 
 /*
  * Local variables:

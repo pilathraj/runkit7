@@ -39,6 +39,7 @@ Around half of the runkit tests are passing. Others are missing methods.
 -	`runkit_function_*`: Most tests are passing. There are some bugs related to renaming internal functions, as well as 
 -	`runkit_method_*`: Most tests are passing. Same comment as `runkit_function_*`
 -	`runkit_zval_inspect`: Partly passing, and needs to be rewritten because of PHP7's zval changes.
+-	`runkit_constant_add` works. Other constant manipulation functions don't work yet.
 
 #### Unsupported APIs for PHP7:
 (These functions will be missing)
@@ -48,12 +49,10 @@ Around half of the runkit tests are passing. Others are missing methods.
 	(Uncomment `// #define PHP_RUNKIT_MANIPULATION_IMPORT` to attempt to compile this)
 -	`runkit_class_adopt` and `runkit_class_emancipate`
 	Not yet compilable; depends on runkit's support for classes and property manipulation suport
-	(Uncomment `// #define PHP_RUNKIT_MANIPULATION_PROPERTIES` and `// #define PHP_RUNKIT_RUNKIT_MANIPULATION_CONSTANTS` to work on support for class manipulation)
+	(Uncomment `// #define PHP_RUNKIT_MANIPULATION_PROPERTIES` to work on support for class manipulation)
 -	`runkit_lint*`        
 	Not yet compilable.
--	`runkit_constant_*`   
-	Not yet compilable.
-	(Uncomment `#define PHP_RUNKIT_MANIPULATION_CONSTANTS` to work on support for constant manipulation)
+-	`runkit_constant_*` : `runkit_constant_add` works reliably, other methods don't.
 -	`runkit_default_property_*`   
 	Not yet compilable.
 	(Uncomment `#define PHP_RUNKIT_MANIPULATION_PROPERTIES` to work on support for default property manipulation)
