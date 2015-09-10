@@ -132,7 +132,7 @@ void php_runkit_function_copy_ctor(zend_function *fe, zend_string* newname TSRML
 	zend_string **dupvars;  // Array of zend_string*s
 	zend_op *last_op;
 	zend_op *opcode_copy;
-	int i;
+	uint32_t i;
 
 	if (newname) {
 		zend_string_addref(newname);
@@ -351,7 +351,7 @@ static void php_runkit_clear_function_runtime_cache_for_function_table(HashTable
 /* {{{ php_runkit_clear_all_functions_runtime_cache */
 void php_runkit_clear_all_functions_runtime_cache(TSRMLS_D)
 {
-	int i;
+	uint32_t i;
 	zend_execute_data *ptr;
 	zend_class_entry* ce;
 
@@ -400,7 +400,7 @@ static inline reflection_object *reflection_object_from_obj(zend_object *obj) {
 
 /* {{{ php_runkit_remove_function_from_reflection_objects */
 void php_runkit_remove_function_from_reflection_objects(zend_function *fe TSRMLS_DC) {
-	int i;
+	uint32_t i;
 	extern PHPAPI zend_class_entry *reflection_function_ptr;
 	extern PHPAPI zend_class_entry *reflection_method_ptr;
 	extern PHPAPI zend_class_entry *reflection_parameter_ptr;
