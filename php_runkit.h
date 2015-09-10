@@ -38,7 +38,11 @@
 
 #include "Zend/zend_interfaces.h"
 
-// #define DEBUGGING
+#ifdef __GNUC__
+// Make it easy to verify that format strings are correct in recent versions of gcc.
+extern PHPAPI ZEND_COLD void php_error_docref(const char *docref, int type, const char *format, ...)
+	__attribute__((format (printf, 3, 4)));
+#endif
 #ifdef DEBUGGING
 #define debug_printf(...) printf(__VA_ARGS__)
 static inline void* _debug_emalloc(void* data, int bytes, char* file, int line) {
@@ -93,6 +97,7 @@ static inline void* _debug_emalloc(void* data, int bytes, char* file, int line) 
 // TODO: Clean up these macros once the corresponding functions/files are 100% correct.
 // #define PHP_RUNKIT_MANIPULATION_IMPORT
 // #define PHP_RUNKIT_MANIPULATION_PROPERTIES
+// #define PHP_RUNKIT_MANIPULATION_CLASSES
 #endif
 
 #ifdef PHP_RUNKIT_MANIPULATION
@@ -128,6 +133,8 @@ PHP_FUNCTION(runkit_constant_add);
 #ifdef PHP_RUNKIT_MANIPULATION_PROPERTIES
 PHP_FUNCTION(runkit_default_property_add);
 PHP_FUNCTION(runkit_default_property_remove);
+#endif
+#ifdef PHP_RUNKIT_MANIPULATION_CLASSES
 PHP_FUNCTION(runkit_class_emancipate);
 PHP_FUNCTION(runkit_class_adopt);
 #endif
@@ -264,8 +271,10 @@ void php_runkit_update_children_consts(zend_class_entry *ce, zend_class_entry *p
 int php_runkit_class_copy(zend_class_entry *src, zend_string *classname TSRMLS_DC);
 
 /* runkit_props.c */
-int php_runkit_update_children_def_props(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), int num_args, va_list args, zend_hash_key *hash_key);
-int php_runkit_def_prop_add_int(zend_class_entry *ce, const zend_string *propname, zval *copyval, long visibility, const zend_string *doc_comment, zend_class_entry *definer_class, int override, int override_in_objects TSRMLS_DC);
+void php_runkit_update_children_def_props(zend_class_entry *ce, zend_class_entry *parent_class, zval *p, zend_string *pname, int access_type, zend_class_entry *definer_class, int override, int override_in_objects);
+int php_runkit_def_prop_add_int(zend_class_entry *ce, zend_string* propname, zval *copyval, long visibility,
+                                zend_string* doc_comment, zend_class_entry *definer_class, int override,
+                                int override_in_objects TSRMLS_DC);
 int php_runkit_def_prop_remove_int(zend_class_entry *ce, zend_string* propname, zend_class_entry *definer_class,
                                    zend_bool was_static, zend_bool remove_from_objects, zend_property_info *parent_property TSRMLS_DC);
 void php_runkit_remove_property_from_reflection_objects(zend_class_entry *ce, zend_string *prop_name TSRMLS_DC);

@@ -88,7 +88,7 @@ zend_function_entry runkit_functions[] = {
 #endif
 
 #ifdef PHP_RUNKIT_MANIPULATION
-#ifdef PHP_RUNKIT_MANIPULATION_PROPERTIES
+#ifdef PHP_RUNKIT_MANIPULATION_CLASSES
 	PHP_FE(runkit_class_emancipate,									NULL)
 	PHP_FE(runkit_class_adopt,										NULL)
 #endif
@@ -117,11 +117,9 @@ zend_function_entry runkit_functions[] = {
 	PHP_FALIAS(classkit_import,				runkit_import,			NULL)
 #endif
 
-#ifdef PHP_RUNKIT_MANIPULATION_CONSTANTS
 	PHP_FE(runkit_constant_redefine,								NULL)
 	PHP_FE(runkit_constant_remove,									NULL)
 	PHP_FE(runkit_constant_add,										NULL)
-#endif
 
 #ifdef PHP_RUNKIT_MANIPULATION_PROPERTIES
 	PHP_FE(runkit_default_property_add,								NULL)

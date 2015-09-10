@@ -26,84 +26,67 @@
 
 /* {{{ php_runkit_make_object_property_public */
 static inline void php_runkit_make_object_property_public(zend_string *propname, zend_object *object, int offset, zend_property_info *property_info_ptr TSRMLS_DC) {
-	zval *prop_val = NULL;
-	if (!object->properties) {
-		prop_val = &object->properties_table[offset];
-		rebuild_object_properties(object);
-	} else if (object->properties_table[offset]) {
-		prop_val = &object->properties_table[offset];
-	}
-	if ((property_info_ptr->flags & (ZEND_ACC_PRIVATE | ZEND_ACC_PROTECTED | ZEND_ACC_SHADOW)) && prop_val) {
-		// TODO: should these references be shared?
-		Z_TRY_ADDREF_P(prop_val);
-		if (h != property_info_ptr->h) {
-			zend_hash_del(object->properties, property_info_ptr->name, property_info_ptr->h);
+	if ((property_info_ptr->flags & (ZEND_ACC_PRIVATE | ZEND_ACC_PROTECTED | ZEND_ACC_SHADOW))) {
+		zval *prop_val = NULL;
+		if (!object->properties) {
+			prop_val = &object->properties_table[offset];
+			rebuild_object_properties(object);
+		} else if (!Z_ISUNDEF(object->properties_table[offset])) {
+			// TODO: Is Z_ISUNDEF the correct thing to do?
+			prop_val = &object->properties_table[offset];
 		}
-		// TODO: This is probably going to cause a segfault.
-		zend_hash_update(object->properties, propname, prop_val);
-		php_error_docref(NULL TSRMLS_CC, E_NOTICE, "Making %s::%s public to remove it "
-				 "from class without objects overriding", ZSTR_VAL(object->ce->name), ZSTR_VAL(propname));
+		if (prop_val) {
+			// TODO: should these references be shared?
+			Z_TRY_ADDREF_P(prop_val);
+			// Could probably also be ZSTR_H
+			if (ZSTR_HASH(propname) != ZSTR_HASH(property_info_ptr->name)) {
+				zend_hash_del(object->properties, property_info_ptr->name);
+			}
+			// TODO: This is probably going to cause a segfault.
+			zend_hash_update(object->properties, propname, prop_val);
+			php_error_docref(NULL TSRMLS_CC, E_NOTICE, "Making %s::%s public to remove it "
+					 "from class without objects overriding", ZSTR_VAL(object->ce->name), ZSTR_VAL(propname));
+		}
 	}
 }
 /* }}} */
 
 /* {{{ php_runkit_update_children_def_props
 	Scan the class_table for children of the class just updated */
-int php_runkit_update_children_def_props(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), int num_args, va_list args, zend_hash_key *hash_key)
+void php_runkit_update_children_def_props(zend_class_entry *ce, zend_class_entry *parent_class, zval *p, zend_string *pname, int access_type, zend_class_entry *definer_class, int override, int override_in_objects)
 {
-	zend_class_entry *parent_class = va_arg(args, zend_class_entry*);
-	zval *p = va_arg(args, zval*);
-	char *pname = va_arg(args, char*);
-	int pname_len = va_arg(args, int);
-	int access_type = va_arg(args, int);
-	zend_class_entry *definer_class = va_arg(args, zend_class_entry*);
-	int override = va_arg(args, int);
-	int override_in_objects = va_arg(args, int);
-
-	RUNKIT_UNDER53_TSRMLS_FETCH();
-
-	ce = *((zend_class_entry**)ce);
-
 	if (ce->parent != parent_class) {
 		/* Not a child, ignore */
-		return ZEND_HASH_APPLY_KEEP;
+		return;
 	}
 
-	php_runkit_def_prop_add_int(ce, pname, pname_len, p, access_type, NULL, 0, definer_class, override, override_in_objects TSRMLS_CC);
-	return ZEND_HASH_APPLY_KEEP;
+	php_runkit_def_prop_add_int(ce, pname, p, access_type, (zend_string*) NULL, definer_class, override, override_in_objects TSRMLS_CC);
 }
 /* }}} */
 
 /* {{{ php_runkit_remove_children_def_props
 	Scan the class_table for children of the class just removed */
-static int php_runkit_remove_children_def_props(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), int num_args, va_list args, zend_hash_key *hash_key)
+static void php_runkit_remove_children_def_props(zend_class_entry *ce, zend_class_entry *parent_class, zend_string *pname,
+	zend_class_entry *class_we_originally_removing_from, zend_bool was_static, zend_bool remove_from_objects, zend_property_info *parent_property)
 {
-	zend_class_entry *parent_class =  va_arg(args, zend_class_entry*);
-	zend_string *pname = va_arg(args, zend_string*);
-	zend_class_entry *class_we_originally_removing_from = va_arg(args, zend_class_entry*);
-	zend_bool was_static = va_arg(args, int);
-	zend_bool remove_from_objects = va_arg(args, int);
-	zend_property_info *parent_property = va_arg(args, zend_property_info *);
-
-	RUNKIT_UNDER53_TSRMLS_FETCH();
-
-	ce = *((zend_class_entry**)ce);
-
-	if (ce->parent != parent_class || !hash_key || !hash_key->arKey || !hash_key->arKey[0]) {
+	if (ce->parent != parent_class) {
 		/* Not a child, ignore */
-		return ZEND_HASH_APPLY_KEEP;
+		return;
 	}
 
-	php_runkit_def_prop_remove_int(ce, pname, pname_len, class_we_originally_removing_from, was_static, remove_from_objects,
+	php_runkit_def_prop_remove_int(ce, pname, class_we_originally_removing_from, was_static, remove_from_objects,
 	                               parent_property TSRMLS_CC);
-	return ZEND_HASH_APPLY_KEEP;
 }
 /* }}} */
 
 /* {{{ php_runkit_remove_property_by_full_name */
-static int php_runkit_remove_property_by_full_name(zend_property_info *prop, zend_property_info *comp_prop, zend_hash_key *key) {
-	if (prop->h == comp_prop->h && prop->name_length == comp_prop->name_length &&
-	    memcmp(prop->name, comp_prop->name, prop->name_length) == 0) {
+static int php_runkit_remove_property_by_full_name(zval *pDest, void *argument) {
+	const zend_property_info *prop = Z_PTR_P(pDest);
+	const zend_property_info *comp_prop = (zend_property_info*) argument;
+
+	ZEND_ASSERT(Z_TYPE_INFO_P(pDest) == IS_PTR);
+
+	if (ZSTR_H(prop->name) == ZSTR_H(comp_prop->name) && zend_string_equals(comp_prop->name, prop->name)) {
 		return ZEND_HASH_APPLY_REMOVE;
 	}
 
@@ -111,35 +94,31 @@ static int php_runkit_remove_property_by_full_name(zend_property_info *prop, zen
 }
 /* }}} */
 
-static void php_runkit_remove_overlapped_property_from_childs_foreach(HashTable* ht, RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), zend_string *propname, int offset, zend_bool is_static, zend_bool remove_from_objects, zend_property_info *property_info_ptr) {
-	zend_hash_apply_with_arguments(ht,
-	                               php_runkit_remove_overlapped_property_from_childs,
-	                               7, ce, propname, offset, is_static, remove_from_objects, property_info_ptr);
+/* {{{ php_runkit_remove_overlapped_property_from_child
+       Clean private properties of children by offset */
+static void php_runkit_remove_overlapped_property_from_childs(zend_class_entry *ce, zend_class_entry *parent_class, zend_string *propname, int offset, zend_bool is_static, zend_bool remove_from_objects, zend_property_info *property_info_ptr);
+static void php_runkit_remove_overlapped_property_from_childs_foreach(HashTable* ht, zend_class_entry *parent_class, zend_string *propname, int offset, zend_bool is_static, zend_bool remove_from_objects, zend_property_info *property_info_ptr) {
+	zend_class_entry *ce;
+	ZEND_HASH_FOREACH_PTR(ht, ce) {
+		php_runkit_remove_overlapped_property_from_childs(ce, parent_class, propname, offset, is_static, remove_from_objects, property_info_ptr);
+	} ZEND_HASH_FOREACH_END();
 }
-/* {{{ php_runkit_remove_overlapped_property_from_childs
-       Clean private properties by offset */
-static int php_runkit_remove_overlapped_property_from_childs(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), int num_args, va_list args, zend_hash_key *hash_key)
-{
-	zend_class_entry *parent_class = va_arg(args, zend_class_entry*);
-	zend_string *propname = va_arg(args, zend_string*);
-	int offset = va_arg(args, int);
-	zend_bool is_static = va_arg(args, int);
-	zend_bool remove_from_objects = va_arg(args, int);
-	zend_property_info *property_info_ptr = va_arg(args, zend_property_info *);
-	int i;
-	zend_property_info *p;
-	zval **table;
-	RUNKIT_UNDER53_TSRMLS_FETCH();
+/* }}} */
 
-	ce = *((zend_class_entry**)ce);
+/* {{{ php_runkit_remove_overlapped_property_from_child
+       Clean private properties of child by offset */
+static void php_runkit_remove_overlapped_property_from_childs(zend_class_entry *ce, zend_class_entry *parent_class, zend_string *propname, int offset, zend_bool is_static, zend_bool remove_from_objects, zend_property_info *property_info_ptr) {
+	uint32_t i;
+	zend_property_info *p;
+	zval *table;
 
 	if (ce->parent != parent_class) {
 		/* Not a child, ignore */
-		return ZEND_HASH_APPLY_KEEP;
+		return;
 	}
 
 	php_runkit_remove_overlapped_property_from_childs_foreach(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), ce, propname, offset, is_static, remove_from_objects, property_info_ptr);
-	php_runkit_remove_property_from_reflection_objects(ce, propname, propname_len TSRMLS_CC);
+	php_runkit_remove_property_from_reflection_objects(ce, propname TSRMLS_CC);
 
 	if (is_static) {
 		goto st_success;
@@ -148,14 +127,14 @@ static int php_runkit_remove_overlapped_property_from_childs(RUNKIT_53_TSRMLS_AR
 	PHP_RUNKIT_ITERATE_THROUGH_OBJECTS_STORE_BEGIN(i)
 		if (object->ce == ce) {
 			if (!remove_from_objects) {
-				php_runkit_make_object_property_public(propname, propname_len, object, offset, property_info_ptr TSRMLS_CC);
+				php_runkit_make_object_property_public(propname, object, offset, property_info_ptr TSRMLS_CC);
 			} else {
-				if (object->properties_table[offset]) {
+				if (!Z_ISUNDEF(object->properties_table[offset])) {
 					if (!object->properties) {
 						zval_ptr_dtor(&object->properties_table[offset]);
-						object->properties_table[offset] = NULL;
+						ZVAL_UNDEF(&object->properties_table[offset]);
 					} else {
-						zend_hash_del(object->properties, propname, propname_len+1);
+						zend_hash_del(object->properties, propname);
 					}
 				}
 			}
@@ -164,19 +143,18 @@ static int php_runkit_remove_overlapped_property_from_childs(RUNKIT_53_TSRMLS_AR
 
 st_success:
 	table = is_static ? ce->default_static_members_table : ce->default_properties_table;
-	if (table[offset]) {
+	if (!Z_ISUNDEF(table[offset])) {
 		zval_ptr_dtor(&table[offset]);
-		table[offset] = NULL;
+		ZVAL_UNDEF(&table[offset]);
 		php_runkit_default_class_members_list_add(&RUNKIT_G(removed_default_class_members), ce, is_static, offset);
 	}
-	h = zend_get_hash_value((char *) propname, propname_len + 1);
-	zend_hash_apply_with_argument(&ce->properties_info, (apply_func_arg_t) php_runkit_remove_property_by_full_name,
+	zend_hash_apply_with_argument(&ce->properties_info,
+								  php_runkit_remove_property_by_full_name,
 	                              property_info_ptr TSRMLS_CC);
-	if (zend_hash_quick_find(&ce->properties_info, propname, propname_len + 1, h, (void *) &p) == SUCCESS &&
-	    p->h == property_info_ptr->h) {
-		zend_hash_quick_del(&ce->properties_info, propname, propname_len + 1, h);
+	if ((p = zend_hash_find_ptr(&ce->properties_info, propname)) != NULL &&
+	    ZSTR_H(p->name) == ZSTR_H(property_info_ptr->name)) {
+		zend_hash_del(&ce->properties_info, propname);
 	}
-	return ZEND_HASH_APPLY_KEEP;
 }
 /* }}} */
 
@@ -185,7 +163,7 @@ int php_runkit_def_prop_add_int(zend_class_entry *ce, zend_string* propname, zva
                                 zend_string* doc_comment, zend_class_entry *definer_class, int override,
                                 int override_in_objects TSRMLS_DC)
 {
-	int i;
+	uint32_t i;
 	int offset;
 	zend_property_info *prop_info_ptr = NULL;
 	zval *pcopyval = copyval;
@@ -194,77 +172,86 @@ int php_runkit_def_prop_add_int(zend_class_entry *ce, zend_string* propname, zva
 		return SUCCESS;
 	}
 
-	Z_ADDREF_P(pcopyval);
+	Z_TRY_ADDREF_P(pcopyval);
 
+	// FIXME: Figure out what to do if references must be used.
+	/*
 	if (visibility & ZEND_ACC_STATIC) {
 		if (definer_class == NULL || ce == definer_class) {
-			zval_ptr_dtor(&pcopyval);
+			Z_TRY_DELREF_P(pcopyval);
 			SEPARATE_ARG_IF_REF(pcopyval);
 		} else {
+			// TODO: Equivalent of below
 			Z_SET_ISREF_P(pcopyval);
 		}
 	}
+	*/
 
 	// TODO: Extract from zval instead.
-	if ((prop_info_ptr = zend_hash_find(&ce->properties_info, propname)) != NULL) {
+	if ((prop_info_ptr = zend_hash_find_ptr(&ce->properties_info, propname)) != NULL) {
 		if (!override) {
-			zval_ptr_dtor(&pcopyval);
+			zval_ptr_dtor(pcopyval);
 			php_error_docref(NULL TSRMLS_CC, E_NOTICE, "%s%s%s already exists, not adding",
-			                 ce->name, (prop_info_ptr->flags & ZEND_ACC_STATIC) ? "::$" : "->", propname);
+			                 ZSTR_VAL(ce->name), (prop_info_ptr->flags & ZEND_ACC_STATIC) ? "::$" : "->", ZSTR_VAL(propname));
 			return FAILURE;
 		} else {
-			php_runkit_def_prop_remove_int(ce, propname, propname_len, NULL, 0, override_in_objects, NULL TSRMLS_CC);
+			php_runkit_def_prop_remove_int(ce, propname, NULL, (zend_bool) 0, override_in_objects, (zend_property_info*) NULL TSRMLS_CC);
 			php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
 		}
 	}
 	prop_info_ptr = NULL;
 
-	if (zend_declare_property_ex(ce, (char *) propname, propname_len, pcopyval, visibility, (char *) doc_comment, doc_comment_len TSRMLS_CC) == FAILURE) {
-		zval_ptr_dtor(&pcopyval);
+	if (zend_declare_property_ex(ce, propname, pcopyval, visibility, doc_comment TSRMLS_CC) == FAILURE) {
+		zval_ptr_dtor(pcopyval);
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Cannot declare new property");
 		return FAILURE;
 	}
 
 	if (ce != definer_class) {
-		if (zend_hash_quick_find(&ce->properties_info, (char *) propname, propname_len + 1, h, (void*) &prop_info_ptr) != SUCCESS) {
-			zval_ptr_dtor(&pcopyval);
+		if (zend_hash_find(&ce->properties_info, propname) == NULL) {
+			zval_ptr_dtor(pcopyval);
 			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Cannot find just added property's info");
 			return FAILURE;
 		}
 		if (visibility & ZEND_ACC_PRIVATE) {
-			char *newkey;
-			int newkey_len;
-			char *oldkey;
-			const char *interned_name;
-			int oldkey_len;
+			zend_string *newkey;
+			// zend_string *oldkey;
+			zend_string *interned_name;
 			zend_property_info new_prop_info;
-			zend_mangle_property_name(&newkey, &newkey_len, definer_class->name, definer_class->name_length, (char *) propname, propname_len, ce->type & ZEND_INTERNAL_CLASS);
-			zend_mangle_property_name(&oldkey, &oldkey_len, ce->name, ce->name_length, (char *) propname, propname_len, ce->type & ZEND_INTERNAL_CLASS);
+			// TODO: Types?
+			newkey = zend_mangle_property_name(ZSTR_VAL(definer_class->name), ZSTR_LEN(definer_class->name), ZSTR_VAL(propname), ZSTR_LEN(propname), ce->type & ZEND_INTERNAL_CLASS);
+			// old_key = zend_mangle_property_name(ce->name, ce->name_length, propname, propname_len, ce->type & ZEND_INTERNAL_CLASS);
 			memcpy(&new_prop_info, prop_info_ptr, sizeof(zend_property_info));
 			new_prop_info.name = newkey;
-			new_prop_info.name_length = newkey_len;
 			new_prop_info.ce = definer_class;
-			interned_name = zend_new_interned_string(new_prop_info.name, new_prop_info.name_length+1, 0 TSRMLS_CC);
+			// TODO: revisit reference counting.
+			interned_name = zend_new_interned_string(new_prop_info.name);
 			if (interned_name != new_prop_info.name) {
-				efree((char*)new_prop_info.name);
+				zend_string_release(new_prop_info.name);
 				new_prop_info.name = interned_name;
 			}
 
-			new_prop_info.h = zend_get_hash_value(new_prop_info.name, new_prop_info.name_length + 1);
-			new_prop_info.doc_comment = new_prop_info.doc_comment ? estrndup(new_prop_info.doc_comment, new_prop_info.doc_comment_len) : NULL;
-			zend_hash_quick_del(&ce->properties_info, (char *) propname, propname_len + 1, h);
-			zend_hash_quick_update(&ce->properties_info, (char *) propname, propname_len + 1, h, &new_prop_info, sizeof(zend_property_info), NULL);
-			pefree((void*)oldkey, ce->type & ZEND_INTERNAL_CLASS);
-			zend_hash_quick_find(&ce->properties_info, (char *) propname, propname_len + 1, h, (void*) &prop_info_ptr);
+			// TODO: is this needed?
+			ZSTR_HASH(new_prop_info.name);
+			if (new_prop_info.doc_comment) {
+				// TODO: clone instead?
+				// zend_string_addref(new_prop_info.doc_comment);
+			}
+			// TODO: update instead?
+			zend_hash_del(&ce->properties_info, propname);
+			prop_info_ptr = zend_hash_add_mem(&ce->properties_info, propname, &new_prop_info, sizeof(zend_property_info));
 		}
 		prop_info_ptr->ce = definer_class;
 	}
-	zend_hash_apply_with_arguments(RUNKIT_53_TSRMLS_PARAM(EG(class_table)),
-	                               (apply_func_args_t)php_runkit_update_children_def_props, 8, ce, copyval,
-	                               propname, propname_len, visibility, definer_class, override, override_in_objects);
+	{
+		zend_class_entry *ce_it;
+		ZEND_HASH_FOREACH_PTR(EG(class_table), ce_it) {
+			php_runkit_update_children_def_props(ce_it, ce, copyval, propname, visibility, definer_class, override, override_in_objects);
+		} ZEND_HASH_FOREACH_END();
+	}
 
-	if (!prop_info_ptr && zend_hash_quick_find(&ce->properties_info, (char *) propname, propname_len + 1, h, (void*) &prop_info_ptr) != SUCCESS) {
-		zval_ptr_dtor(&pcopyval);
+	if (!prop_info_ptr && (prop_info_ptr = zend_hash_find_ptr(&ce->properties_info, propname)) == NULL) {
+		zval_ptr_dtor(pcopyval);
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Cannot find just added property's info");
 		return FAILURE;
 	}
@@ -277,47 +264,39 @@ int php_runkit_def_prop_add_int(zend_class_entry *ce, zend_string* propname, zva
 	PHP_RUNKIT_ITERATE_THROUGH_OBJECTS_STORE_BEGIN(i)
 		if (object->ce == ce) {
 			int new_size = offset + 1;
-			if (!object->properties_table) {
-				object->properties_table = pemalloc(sizeof(void*) * (new_size), 0);
-				memset(object->properties_table, 0, new_size * sizeof(void *));
-			} else {
-				object->properties_table = perealloc(object->properties_table, sizeof(void*) * (new_size), 0);
-				object->properties_table[new_size - 1] = NULL;
+			if (new_size >= 1) {
+				// Reallocate the object's properties_table so that there are exactly new_size properties
+				// (includes an additional terminating undefined property)
+				// TODO: This seems like it depends on ZEND_ACC_USE_GUARDS, from looking at the function zend_object_properties_size
+				object = perealloc(object, sizeof(zend_object) + sizeof(zval) * (new_size - 1), 0);
+				ZVAL_UNDEF(&object->properties_table[new_size - 1]);
 			}
-			if (ce->default_properties_table[offset]) {
+			if (!Z_ISUNDEF(ce->default_properties_table[offset])) {
 				if (!object->properties) {
 					if (override_in_objects) {
-						Z_ADDREF_P(ce->default_properties_table[offset]);
+						Z_ADDREF(ce->default_properties_table[offset]);
 						object->properties_table[offset] = ce->default_properties_table[offset];
 					} else {
-						if (object->properties_table[offset]) {
+						if (!Z_ISUNDEF(object->properties_table[offset])) {
 							zval_ptr_dtor(&object->properties_table[offset]);
-							object->properties_table[offset] = NULL;
+							ZVAL_UNDEF(&object->properties_table[offset]);
 						}
 					}
 				} else {
-					zval **prop_val;
-					if (zend_hash_quick_find(object->properties, prop_info_ptr->name,
-								 prop_info_ptr->name_length+1,
-								 prop_info_ptr->h, (void *) &prop_val) != SUCCESS &&
-					    (prop_info_ptr->h == h || zend_hash_quick_find(object->properties, propname,
-											   propname_len+1,
-											   h, (void *) &prop_val) != SUCCESS)) {
+					// TODO: Use a faster version of zend_hash_find for use in inner loops? Check if the hashes match first?
+					// TODO: This seems redundant.
+					zval *prop_val;
+					if ((prop_val = zend_hash_find(object->properties, prop_info_ptr->name)) == NULL &&
+					    (prop_val = zend_hash_find(object->properties, propname)) == NULL) {
 						if (override_in_objects) {
-							if (object->properties_table[offset]) {
-								zval_ptr_dtor((zval **) object->properties_table[offset]);
-								object->properties_table[offset] = NULL;
+							if (!Z_ISUNDEF(object->properties_table[offset])) {
+								zval_ptr_dtor(&object->properties_table[offset]);
+								ZVAL_UNDEF(&object->properties_table[offset]);
 							}
 							object->properties_table[offset] = ce->default_properties_table[offset];
-#if ZTS
-							ALLOC_ZVAL(object->properties_table[offset]);
-							MAKE_COPY_ZVAL(&ce->default_properties_table[offset], object->properties_table[offset]);
-#else
-							Z_ADDREF_P(ce->default_properties_table[offset]);
-#endif
-							zend_hash_quick_update(object->properties, prop_info_ptr->name, prop_info_ptr->name_length+1,
-									       prop_info_ptr->h, &object->properties_table[offset], sizeof(zval *),
-									       (void*)&object->properties_table[offset]);
+							// TODO: Look at this line again
+							Z_TRY_ADDREF(object->properties_table[offset]);
+							zend_hash_update(object->properties, prop_info_ptr->name, &object->properties_table[offset]);
 							/**
 							 * TODO: figure out how to replace this?
 							if (prop_info_ptr->h != h) {
@@ -328,7 +307,7 @@ int php_runkit_def_prop_add_int(zend_class_entry *ce, zend_string* propname, zva
 					} else {
 						if (!override_in_objects) {
 							// TODO: Is this correct way to copy?
-							object->properties_table[offset] = prop_val;
+							object->properties_table[offset] = *prop_val;
 							Z_ADDREF_P(&object->properties_table[offset]);
 							zend_hash_update(object->properties, prop_info_ptr->name,
 									       &object->properties_table[offset]);
@@ -378,8 +357,8 @@ static int php_runkit_def_prop_add(zend_string *classname, zend_string *propname
 	/* Check for existing property by this name */
 	/* Existing public? */
 	if ((existing_prop = zend_hash_find_ptr(&ce->properties_info, propname)) != NULL) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s%s%s already exists", classname,
-		                 (existing_prop->flags & ZEND_ACC_STATIC) ? "::$" : "->", propname);
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s%s%s already exists", ZSTR_VAL(classname),
+		                 (existing_prop->flags & ZEND_ACC_STATIC) ? "::$" : "->", ZSTR_VAL(propname));
 		return FAILURE;
 	}
 
@@ -425,7 +404,7 @@ int php_runkit_def_prop_remove_int(zend_class_entry *ce, zend_string *propname, 
                                    zend_bool was_static, zend_bool remove_from_objects,
                                    zend_property_info *parent_property TSRMLS_DC)
 {
-	int i;
+	uint32_t i;
 	int offset;
 	int flags;
 	zend_property_info *property_info_ptr;
@@ -435,7 +414,7 @@ int php_runkit_def_prop_remove_int(zend_class_entry *ce, zend_string *propname, 
 			class_we_originally_removing_from = property_info_ptr->ce;
 		}
 		if (parent_property &&
-		    ((parent_property->offset >= 0 && parent_property->offset != property_info_ptr->offset) ||
+		    (parent_property->offset != property_info_ptr->offset ||
 		     parent_property->ce != property_info_ptr->ce ||
 		     ((parent_property->flags & ZEND_ACC_STATIC) != (property_info_ptr->flags & ZEND_ACC_STATIC))
 		    )) {
@@ -450,6 +429,7 @@ int php_runkit_def_prop_remove_int(zend_class_entry *ce, zend_string *propname, 
 			was_static = 1;
 			// TODO: is this reasonable?
 			if (!Z_ISUNDEF(ce->default_static_members_table[property_info_ptr->offset])) {
+				// TODO: Free this property?
 				zval_ptr_dtor(&ce->default_static_members_table[property_info_ptr->offset]);
 				// TODO: is this reasonable?
 				ZVAL_UNDEF(&ce->default_static_members_table[property_info_ptr->offset]);
@@ -469,12 +449,14 @@ int php_runkit_def_prop_remove_int(zend_class_entry *ce, zend_string *propname, 
 				                               property_info_ptr->flags & ZEND_ACC_STATIC, remove_from_objects, property_info_ptr);
 			}
 		}
-		zend_hash_apply_with_arguments(RUNKIT_53_TSRMLS_PARAM(EG(class_table)),
-		                               (apply_func_args_t)php_runkit_remove_children_def_props,
-		                               7, ce, propname, class_we_originally_removing_from,
-		                               was_static
-		                               , remove_from_objects, property_info_ptr
-		);
+		{
+			zend_class_entry *ce_iter;
+			ZEND_HASH_FOREACH_PTR(EG(class_table), ce_iter) {
+
+				php_runkit_remove_children_def_props(ce_iter, ce, propname, class_we_originally_removing_from,
+		                               was_static, remove_from_objects, property_info_ptr);
+			} ZEND_HASH_FOREACH_END();
+		}
 
 		php_runkit_remove_property_from_reflection_objects(ce, propname TSRMLS_CC);
 		php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
@@ -482,7 +464,7 @@ int php_runkit_def_prop_remove_int(zend_class_entry *ce, zend_string *propname, 
 		if (parent_property) {
 			return SUCCESS;
 		} else {
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s::%s does not exist", ce->name, propname);
+			php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s::%s does not exist", ZSTR_VAL(ce->name), ZSTR_VAL(propname));
 			return FAILURE;
 		}
 	}
@@ -499,7 +481,6 @@ int php_runkit_def_prop_remove_int(zend_class_entry *ce, zend_string *propname, 
 				if (!Z_ISUNDEF(object->properties_table[offset])) {
 					if (!object->properties) {
 						zval_ptr_dtor(&object->properties_table[offset]);
-						// TODO: what does this do?
 						ZVAL_UNDEF(&object->properties_table[offset]);
 					} else {
 						zend_hash_del(object->properties, property_info_ptr->name);
@@ -518,7 +499,6 @@ st_success:
 		ZVAL_UNDEF(&ce->default_properties_table[property_info_ptr->offset]);
 		php_runkit_default_class_members_list_add(&RUNKIT_G(removed_default_class_members), ce, 0, property_info_ptr->offset);
 	}
-	zend_hash_del(&ce->properties_info, propname);
 	return SUCCESS;
 }
 /* }}} */
@@ -545,7 +525,7 @@ static int php_runkit_def_prop_remove(zend_string *classname, zend_string *propn
 
 /* {{{ php_runkit_remove_property_from_reflection_objects */
 void php_runkit_remove_property_from_reflection_objects(zend_class_entry *ce, zend_string *propname TSRMLS_DC) {
-	int i;
+	uint32_t i;
 	extern PHPAPI zend_class_entry *reflection_property_ptr;
 
 	PHP_RUNKIT_ITERATE_THROUGH_OBJECTS_STORE_BEGIN(i)
@@ -555,7 +535,8 @@ void php_runkit_remove_property_from_reflection_objects(zend_class_entry *ce, ze
 				property_reference *prop_ref = (property_reference *) refl_obj->ptr;
 				if (prop_ref->ce == ce && zend_string_equals(prop_ref->prop.name, propname)) {
 					if (refl_obj->ref_type == REF_TYPE_DYNAMIC_PROPERTY) {
-						efree((char *)prop_ref->prop.name);
+						// TODO: set this to null?
+						zend_string_release(prop_ref->prop.name);
 					}
 					efree(refl_obj->ptr);
 					refl_obj->ptr = NULL;
