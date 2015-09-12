@@ -292,48 +292,48 @@ import_st_prop_skip:
 static int php_runkit_import_class_props(zend_class_entry *dce, zend_class_entry *ce, int override, int remove_from_objects TSRMLS_DC)
 {
 	HashPosition pos;
-	char *key;
-	uint key_len;
-	zval **p;
-	ulong idx;
+	zend_string *key;
+	uint idx;
 
 	zend_property_info *property_info_ptr;
 
-	zend_hash_internal_pointer_reset_ex(&ce->properties_info, &pos);
-	while (zend_hash_get_current_data_ex(&ce->properties_info, (void*) &property_info_ptr, &pos) == SUCCESS &&
-	       property_info_ptr) {
-		if (zend_hash_get_current_key_ex(&ce->properties_info, &key, &key_len, &idx, 0, &pos) == HASH_KEY_IS_STRING) {
-			if (property_info_ptr->flags & ZEND_ACC_STATIC) {
-				goto import_st54_prop_skip;
-			}
-			if (zend_hash_exists(&dce->properties_info, key, key_len)) {
-				if (!override) {
-					php_error_docref(NULL TSRMLS_CC, E_NOTICE, "%s%s%s already exists, not importing",
-					                 dce->name, (property_info_ptr->flags & ZEND_ACC_STATIC) ? "::$" : "->", key);
-					goto import_st54_prop_skip;
-				}
-			}
-			p = &ce->default_properties_table[property_info_ptr->offset];
-			if (zend_hash_quick_find(&ce->default_properties, property_info_ptr->name, property_info_ptr->name_length + 1, property_info_ptr->h, (void*) &p) != SUCCESS) {
-				php_error_docref(NULL TSRMLS_CC, E_WARNING,
-								 "Cannot import broken default property %s->%s", ce->name, key);
-				goto import_st54_prop_skip;
-			}
+	ZEND_HASH_FOREACH_STR_KEY_PTR(&ce->properties_info, key, property_info_ptr) {
+		// TODO: Check if this was a property_info_ptr
 
-			if (
-				Z_TYPE_PP(p) == IS_CONSTANT_AST
-				|| (Z_TYPE_PP(p) & IS_CONSTANT_TYPE_MASK) == IS_CONSTANT
-			) {
-				zval_update_constant_ex(p, _CONSTANT_INDEX(1), dce TSRMLS_CC);
-			}
-
-			php_runkit_zval_resolve_class_constant(p, dce TSRMLS_CC);
-			php_runkit_def_prop_add_int(dce, key, key_len - 1, *p,
-			                            property_info_ptr->flags, property_info_ptr->doc_comment,
-			                            property_info_ptr->doc_comment_len, dce, override, remove_from_objects TSRMLS_CC);
+		// Ignore non-string keys
+		if (key == NULL) {
+			continue;
 		}
-import_st54_prop_skip:
-		zend_hash_move_forward_ex(&ce->properties_info, &pos);
+
+		if (property_info_ptr->flags & ZEND_ACC_STATIC) {
+			continue;
+		}
+		if (zend_hash_exists(&dce->properties_info, key)) {
+			if (!override) {
+				php_error_docref(NULL TSRMLS_CC, E_NOTICE, "%s%s%s already exists, not importing",
+								 dce->name, (property_info_ptr->flags & ZEND_ACC_STATIC) ? "::$" : "->", key);
+				continue;
+			}
+		}
+		p = &ce->default_properties_table[property_info_ptr->offset];
+		// TODO: what does this do?
+		if ((*p = zend_hash_quick_find(&ce->default_properties, property_info_ptr->name)) == NULL) {
+			php_error_docref(NULL TSRMLS_CC, E_WARNING,
+							 "Cannot import broken default property %s->%s", ce->name, key);
+			goto import_st54_prop_skip;
+		}
+
+		if (
+			Z_TYPE_PP(p) == IS_CONSTANT_AST
+			|| (Z_TYPE_PP(p) & IS_CONSTANT_TYPE_MASK) == IS_CONSTANT
+		) {
+			zval_update_constant_ex(p, _CONSTANT_INDEX(1), dce TSRMLS_CC);
+		}
+
+		php_runkit_zval_resolve_class_constant(p, dce TSRMLS_CC);
+		php_runkit_def_prop_add_int(dce, key, key_len - 1, *p,
+									property_info_ptr->flags, property_info_ptr->doc_comment,
+									property_info_ptr->doc_comment_len, dce, override, remove_from_objects TSRMLS_CC);
 	}
 
 	return SUCCESS;
@@ -346,54 +346,50 @@ static int php_runkit_import_classes(HashTable *class_table, long flags
                                      , zend_bool *clear_cache
                                      TSRMLS_DC)
 {
-	HashPosition pos;
-	int i, class_count;
+	zval *ce_zv;
+	zend_ulong idx;
+	zend_string *key;
 
-	class_count = zend_hash_num_elements(class_table);
-	zend_hash_internal_pointer_reset_ex(class_table, &pos);
-	for(i = 0; i < class_count; i++) {
+	ZEND_HASH_FOREACH_KEY_VAL(class_table, idx, key, ce_zv) {
 		zend_class_entry *ce = NULL;
-		char *key;
-		uint key_len;
-		int type;
-		ulong idx;
 		zend_class_entry *dce;
 
-		zend_hash_get_current_data_ex(class_table, (void*)&ce, &pos);
-		if (ce) {
-			ce = *((zend_class_entry**)ce);
-		}
 
-		if (!ce) {
+		// TODO: Replace get_current_data_ex with a different loop
+		if (Z_TYPE_INFO_P(ce_zv) != IS_PTR) {
 			php_error_docref(NULL TSRMLS_CC, E_ERROR, "Non-class in class table!");
 			return FAILURE;
 		}
+		ce = Z_PTR_P(ce_zv);
+		if (ce == NULL) {
+			php_error_docref(NULL TSRMLS_CC, E_ERROR, "Null class in class table!");
+		}
 
 		if (ce->type != ZEND_USER_CLASS) {
-			php_error_docref(NULL TSRMLS_CC, E_ERROR, "Cannot import internal class!");
+			if (ce->type == ZEND_INTERNAL_CLASS) {
+				php_error_docref(NULL TSRMLS_CC, E_ERROR, "Cannot import internal class!");
+			} else {
+				php_error_docref(NULL TSRMLS_CC, E_ERROR, "Corrupt class table?");
+			}
 			return FAILURE;
 		}
 
-		type = zend_hash_get_current_key_ex(class_table, &key, &key_len, &idx, 0, &pos);
-
-		if (key[0] != 0) {
-			const char *classname = ce->name;
-			int classname_len = ce->name_length;
-			PHP_RUNKIT_DECL_STRING_PARAM(classname_lower)
-			PHP_RUNKIT_MAKE_LOWERCASE_COPY(classname);
+		if (key != NULL) {
+			zend_string *classname = ce->name;
+			zend_string *classname_lower = zend_string_tolower(classname);
 			if (classname_lower == NULL) {
 				PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
 				return FAILURE;
 			}
 
-			if (!zend_hash_exists(EG(class_table), classname_lower, classname_lower_len + 1)) {
-				php_runkit_class_copy(ce, ce->name, ce->name_length TSRMLS_CC);
+			if (!zend_hash_exists(EG(class_table), classname_lower)) {
+				php_runkit_class_copy(ce, ce->name TSRMLS_CC);
 			}
-			efree(classname_lower);
+			zend_string_release(classname_lower);
 
-			if (php_runkit_fetch_class(ce->name, ce->name_length, &dce TSRMLS_CC) == FAILURE) {
+			if (php_runkit_fetch_class(ce->name, &dce TSRMLS_CC) == FAILURE) {
 				/* Oddly non-existant target class or error retreiving it... Or it's an internal class... */
-				php_error_docref(NULL TSRMLS_CC, E_WARNING, "Cannot redeclare class %s", ce->name);
+				php_error_docref(NULL TSRMLS_CC, E_WARNING, "Cannot redeclare class %s", ZSTR_VAL(ce->name));
 				continue;
 			}
 
@@ -418,20 +414,10 @@ static int php_runkit_import_classes(HashTable *class_table, long flags
 				                                TSRMLS_CC);
 			}
 		}
-		zend_hash_move_forward_ex(class_table, &pos);
+	} ZEND_HASH_FOREACH_END();
 
-		if (type == HASH_KEY_IS_STRING) {
-			if (zend_hash_del(class_table, key, key_len) == FAILURE) {
-				php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to remove temporary version of class %s", ce->name);
-				continue;
-			}
-		} else {
-			if (zend_hash_index_del(class_table, idx) == FAILURE) {
-				php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to remove temporary version of class %s", ce->name);
-				continue;
-			}
-		}
-	}
+	// TODO: blindly assuming that temporary classes are cleaned up properly in zend_hash_destroy.
+	// See if this is wrong.
 
 	return SUCCESS;
 }
@@ -450,15 +436,15 @@ static zend_op_array *php_runkit_compile_filename(int type, zval *filename TSRML
 	zend_file_handle file_handle;
 	zval tmp;
 	zend_op_array *retval;
-	char *opened_path = NULL;
+	zend_string *opened_path = NULL;
 
-	if (filename->type != IS_STRING) {
+	if (Z_TYPE_INFO_P(filename) != IS_STRING) {
 		tmp = *filename;
 		zval_copy_ctor(&tmp);
 		convert_to_string(&tmp);
 		filename = &tmp;
 	}
-	file_handle.filename = filename->value.str.val;
+	file_handle.filename = filename->value.str->val;
 	file_handle.free_filename = 0;
 	file_handle.type = ZEND_HANDLE_FILENAME;
 	file_handle.opened_path = NULL;
@@ -467,13 +453,13 @@ static zend_op_array *php_runkit_compile_filename(int type, zval *filename TSRML
 	/* Use builtin compiler only -- bypass accelerators and whatnot */
 	retval = compile_file(&file_handle, type TSRMLS_CC);
 	if (retval && file_handle.handle.stream.handle) {
-		int dummy = 1;
-
+		// TODO: Duplicate instead?
 		if (!file_handle.opened_path) {
-			file_handle.opened_path = opened_path = estrndup(filename->value.str.val, filename->value.str.len);
+			file_handle.opened_path = opened_path = filename->value.str;
+			zend_string_addref(opened_path);
 		}
 
-		zend_hash_add(&EG(included_files), file_handle.opened_path, strlen(file_handle.opened_path)+1, (void*)&dummy, sizeof(int), NULL);
+		zend_hash_add_empty_element(&EG(included_files), file_handle.opened_path);
 
 		if (opened_path) {
 			efree(opened_path);
@@ -574,7 +560,10 @@ PHP_FUNCTION(runkit_import)
 
 		CG(in_compilation) = 1;
 		while (opline_num != -1) {
-			if (php_runkit_fetch_class_int(Z_STR(new_op_array->opcodes[opline_num-1].op2.zv), &pce TSRMLS_CC) == SUCCESS) {
+			// TODO: Check if it's still op2, figure out the set of expected opcodes
+			zval *op2_zv = RT_CONSTANT_EX(new_op_array->literals, new_op_array->opcodes[opline_num - 1].op2);
+
+			if (Z_TYPE_INFO_P(op2_zv) == IS_STRING && php_runkit_fetch_class_int(Z_STR_P(op2_zv), &pce TSRMLS_CC) == SUCCESS) {
 				do_bind_inherited_class(new_op_array, &new_op_array->opcodes[opline_num], tmp_class_table, pce, 0 TSRMLS_CC);
 			}
 			opline_num = new_op_array->opcodes[opline_num].result.opline_num;
