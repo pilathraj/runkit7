@@ -83,7 +83,7 @@ static int php_runkit_import_functions(HashTable *function_table, long flags
 
 		if (add_function) {
 			if (zend_hash_add(EG(function_table), (char *) new_key, new_key_len, fe, sizeof(zend_function), NULL) == FAILURE) {
-				php_error_docref(NULL TSRMLS_CC, E_WARNING, "Failure importing %s()", fe->common.function_name);
+				php_error_docref(NULL TSRMLS_CC, E_WARNING, "Failure importing %s()", ZSTR_VAL(fe->common.function_name));
 				PHP_RUNKIT_DESTROY_FUNCTION(fe);
 				return FAILURE;
 			} else {
@@ -137,7 +137,7 @@ static int php_runkit_import_class_methods(zend_class_entry *dce, zend_class_ent
 		if (dfe != NULL) {
 			zend_class_entry *scope;
 			if (!override) {
-				php_error_docref(NULL TSRMLS_CC, E_NOTICE, "%s::%s() already exists, not importing", dce->name, fe->common.function_name);
+				php_error_docref(NULL TSRMLS_CC, E_NOTICE, "%s::%s() already exists, not importing", ZSTR_VAL(dce->name), ZSTR_VAL(fe->common.function_name));
 				zend_hash_move_forward_ex(&ce->function_table, &pos);
 				continue;
 			}
@@ -145,7 +145,7 @@ static int php_runkit_import_class_methods(zend_class_entry *dce, zend_class_ent
 			scope = php_runkit_locate_scope(dce, dfe, fn, fn_len);
 
 			if (php_runkit_check_call_stack(&dfe->op_array TSRMLS_CC) == FAILURE) {
-				php_error_docref(NULL TSRMLS_CC, E_WARNING, "Cannot override active method %s::%s(). Skipping.", dce->name, fe->common.function_name);
+				php_error_docref(NULL TSRMLS_CC, E_WARNING, "Cannot override active method %s::%s(). Skipping.", ZSTR_VAL(dce->name), ZSTR_VAL(fe->common.function_name));
 				zend_hash_move_forward_ex(&ce->function_table, &pos);
 				continue;
 			}
@@ -155,7 +155,7 @@ static int php_runkit_import_class_methods(zend_class_entry *dce, zend_class_ent
 			php_runkit_clean_children_methods_foreach(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), scope, dce, fn, fn_len, dfe);
 			php_runkit_remove_function_from_reflection_objects(dfe TSRMLS_CC);
 			if (zend_hash_del(&dce->function_table, fn, fn_len + 1) == FAILURE) {
-				php_error_docref(NULL TSRMLS_CC, E_WARNING, "Error removing old method in destination class %s::%s", dce->name, fe->common.function_name);
+				php_error_docref(NULL TSRMLS_CC, E_WARNING, "Error removing old method in destination class %s::%s", ZSTR_VAL(dce->name), ZSTR_VAL(fe->common.function_name));
 				zend_hash_move_forward_ex(&ce->function_table, &pos);
 				continue;
 			}
@@ -163,7 +163,7 @@ static int php_runkit_import_class_methods(zend_class_entry *dce, zend_class_ent
 
 		fe->common.scope = dce;
 		if (zend_hash_add(&dce->function_table, fn, fn_len + 1, fe, sizeof(zend_function), NULL) == FAILURE) {
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Failure importing %s::%s()", ce->name, fe->common.function_name);
+			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Failure importing %s::%s()", ZSTR_VAL(ce->name), ZSTR_VAL(fe->common.function_name));
 			zend_hash_move_forward_ex(&ce->function_table, &pos);
 			continue;
 		} else {
@@ -171,7 +171,7 @@ static int php_runkit_import_class_methods(zend_class_entry *dce, zend_class_ent
 		}
 
 		if ((fe = zend_hash_str_find(&dce->function_table, fn, fn_len + 1)) == NULL) {
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Cannot get newly created method %s::%s()", ce->name, fn);
+			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Cannot get newly created method %s::%s()", ZSTR_VAL(ce->name), ZSTR_VAL(fn));
 			zend_hash_move_forward_ex(&ce->function_table, &pos);
 			continue;
 		}
@@ -206,7 +206,7 @@ static int php_runkit_import_class_consts(zend_class_entry *dce, zend_class_entr
 				if (override) {
 					action = HASH_UPDATE;
 				} else {
-					php_error_docref(NULL TSRMLS_CC, E_NOTICE, "%s::%s already exists, not importing", dce->name, key);
+					php_error_docref(NULL TSRMLS_CC, E_NOTICE, "%s::%s already exists, not importing", ZSTR_VAL(dce->name), ZSTR_VAL(key));
 					goto import_const_skip;
 				}
 			}
@@ -216,7 +216,7 @@ static int php_runkit_import_class_consts(zend_class_entry *dce, zend_class_entr
 
 			if (zend_hash_add_or_update(&dce->constants_table, key, key_len, (void*)c, sizeof(zval*), NULL, action) == FAILURE) {
 				zval_ptr_dtor(c);
-				php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to import %s::%s", dce->name, key);
+				php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to import %s::%s", ZSTR_VAL(dce->name), ZSTR_VAL(key));
 			}
 
 			php_runkit_update_children_consts_foreach(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), dce, c, key, key_len - 1);
@@ -252,7 +252,7 @@ static int php_runkit_import_class_static_props(zend_class_entry *dce, zend_clas
 			if ((ex_property_info_ptr = zend_hash_str_find(&dce->properties_info, key, key_len)) != NULL) {
 				if (override) {
 					if (php_runkit_def_prop_remove_int(dce, key, key_len - 1, NULL, 0, 0, NULL TSRMLS_CC) != SUCCESS) {
-						php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to import %s::$%s (cannot remove old member)", dce->name, key);
+						php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to import %s::$%s (cannot remove old member)", ZSTR_VAL(dce->name), ZSTR_VAL(key));
 						goto import_st_prop_skip;
 					}
 					php_runkit_zval_resolve_class_constant(pp, dce TSRMLS_CC);
@@ -260,12 +260,12 @@ static int php_runkit_import_class_static_props(zend_class_entry *dce, zend_clas
 					                                property_info_ptr->doc_comment,
 					                                property_info_ptr->doc_comment_len, dce,
 					                                override, remove_from_objects TSRMLS_CC) != SUCCESS) {
-						php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to import %s::$%s (cannot add new member)", dce->name, key);
+						php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to import %s::$%s (cannot add new member)", ZSTR_VAL(dce->name), ZSTR_VAL(key));
 						goto import_st_prop_skip;
 					}
 					goto import_st_prop_skip;
 				} else {
-					php_error_docref(NULL TSRMLS_CC, E_NOTICE, "%s::$%s already exists, not importing", dce->name, key);
+					php_error_docref(NULL TSRMLS_CC, E_NOTICE, "%s::$%s already exists, not importing", ZSTR_VAL(dce->name), ZSTR_VAL(key));
 					goto import_st_prop_skip;
 				}
 			} else {
@@ -273,7 +273,7 @@ static int php_runkit_import_class_static_props(zend_class_entry *dce, zend_clas
 				                                property_info_ptr->doc_comment,
 				                                property_info_ptr->doc_comment_len, dce,
 				                                override, remove_from_objects TSRMLS_CC) != SUCCESS) {
-					php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to import %s::$%s (cannot add new member)", dce->name, key);
+					php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to import %s::$%s (cannot add new member)", ZSTR_VAL(dce->name), ZSTR_VAL(key));
 					goto import_st_prop_skip;
 				}
 			}
@@ -311,7 +311,7 @@ static int php_runkit_import_class_props(zend_class_entry *dce, zend_class_entry
 		if (zend_hash_exists(&dce->properties_info, key)) {
 			if (!override) {
 				php_error_docref(NULL TSRMLS_CC, E_NOTICE, "%s%s%s already exists, not importing",
-								 dce->name, (property_info_ptr->flags & ZEND_ACC_STATIC) ? "::$" : "->", key);
+								 ZSTR_VAL(dce->name), (property_info_ptr->flags & ZEND_ACC_STATIC) ? "::$" : "->", ZSTR_VAL(key));
 				continue;
 			}
 		}
@@ -319,7 +319,7 @@ static int php_runkit_import_class_props(zend_class_entry *dce, zend_class_entry
 		// TODO: what does this do?
 		if ((*p = zend_hash_quick_find(&ce->default_properties, property_info_ptr->name)) == NULL) {
 			php_error_docref(NULL TSRMLS_CC, E_WARNING,
-							 "Cannot import broken default property %s->%s", ce->name, key);
+							 "Cannot import broken default property %s->%s", ZSTR_VAL(ce->name), ZSTR_VAL(key));
 			goto import_st54_prop_skip;
 		}
 
@@ -334,7 +334,7 @@ static int php_runkit_import_class_props(zend_class_entry *dce, zend_class_entry
 		php_runkit_def_prop_add_int(dce, key, key_len - 1, *p,
 									property_info_ptr->flags, property_info_ptr->doc_comment,
 									property_info_ptr->doc_comment_len, dce, override, remove_from_objects TSRMLS_CC);
-	}
+	} ZEND_HASH_FOREACH_END();
 
 	return SUCCESS;
 }
