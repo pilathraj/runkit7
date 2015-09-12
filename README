@@ -40,6 +40,7 @@ Around half of the runkit tests are passing. Others are missing methods.
 -	`runkit_method_*`: Most tests are passing. Same comment as `runkit_function_*`
 -	`runkit_zval_inspect`: Partly passing, and needs to be rewritten because of PHP7's zval changes.
 -	`runkit_constant_add` works. Other constant manipulation functions don't work yet.
+-	Runkit superglobals.
 
 #### Unsupported APIs for PHP7:
 (These functions will be missing)
@@ -56,8 +57,6 @@ Around half of the runkit tests are passing. Others are missing methods.
 -	`runkit_default_property_*`   
 	Not yet compilable.
 	(Uncomment `#define PHP_RUNKIT_MANIPULATION_PROPERTIES` to work on support for default property manipulation)
--	`runkit_superglobals` 
-	I haven't tested this feature yet.
 
 ### USEFUL LINKS
 For those unfamiliar with PHP5 extension writing:
@@ -128,7 +127,7 @@ and to have less bugs and more features.
 Runkit has three groups of features outlined below:
 
 
-## CUSTOM SUPERGLOBALS (Not yet implemented)
+## CUSTOM SUPERGLOBALS
 A new .ini entry `runkit.superglobal` is defined which may be specified as a simple variable, or list of simple variables to be registered as
 superglobals.  runkit.superglobal is defined as PHP_INI_SYSTEM and must be set in the system-wide php.ini.
 
