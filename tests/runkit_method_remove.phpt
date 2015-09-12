@@ -41,4 +41,7 @@ Runkit Method Removed
 Runkit Method
 Runkit Method Removed
 
-Fatal error: Call to undefined %s runkit_class::runkit%sethod() in %s on line %d
+Fatal error: Uncaught Error: Call to undefined method runkit_class::runkitMethod() in %s:%d
+Stack trace:
+#0 {main}
+  thrown in %s on line %d

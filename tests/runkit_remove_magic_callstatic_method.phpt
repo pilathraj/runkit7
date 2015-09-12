@@ -17,4 +17,7 @@ Test::method();
 ?>
 --EXPECTF--
 __callstatic
-Fatal error: Call to undefined method Test::method() in %s on line %d
+Fatal error: Uncaught Error: Call to undefined method Test::method() in %s:%d
+Stack trace:
+#0 {main}
+  thrown in %s on line %d
