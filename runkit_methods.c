@@ -58,10 +58,6 @@ int php_runkit_fetch_class_int(zend_string* classname, zend_class_entry **pce TS
 
 
 	classname_lower = zend_string_tolower(classname);
-	if (classname_lower == NULL) {
-		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-		return FAILURE;
-	}
 
 	// TODO: Replace with ce = zend_lookup_class(classname or classname_lower)?
 	if ((ce = zend_hash_find_ptr(EG(class_table), classname_lower)) == NULL) {
@@ -149,10 +145,6 @@ static int php_runkit_fetch_class_method(zend_string* classname, zend_string* fn
 	ftable = &ce->function_table;
 
 	fname_lower = zend_string_tolower(fname);
-	if (fname_lower == NULL) {
-		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-		return FAILURE;
-	}
 
 	if ((fe = zend_hash_find_ptr(ftable, fname_lower)) == NULL) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s::%s() not found", ZSTR_VAL(classname), ZSTR_VAL(fname));
@@ -330,10 +322,6 @@ static void php_runkit_method_add_or_update(INTERNAL_FUNCTION_PARAMETERS, int ad
 	efree(args);
 
 	methodname_lower = zend_string_tolower(methodname);
-	if (methodname_lower == NULL) {
-		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-		RETURN_FALSE;
-	}
 
 	if (add_or_update == HASH_UPDATE) {
 		if (php_runkit_fetch_class_method(classname, methodname, &ce, &fe TSRMLS_CC) == FAILURE) {
@@ -460,10 +448,6 @@ static int php_runkit_method_copy(zend_string *dclass, zend_string* dfunc, zend_
 	}
 
 	dfunc_lower = zend_string_tolower(dfunc);
-	if (dfunc_lower == NULL) {
-		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-		return FAILURE;
-	}
 
 	if ((fe = zend_hash_find_ptr(&dce->function_table, dfunc_lower)) != NULL) {
 		if (php_runkit_locate_scope(dce, fe, dfunc_lower) == dce) {
@@ -547,10 +531,6 @@ PHP_FUNCTION(runkit_method_remove)
 	}
 
 	methodname_lower = zend_string_tolower(methodname);
-	if (methodname_lower == NULL) {
-		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-		RETURN_FALSE;
-	}
 
 	ancestor_class = php_runkit_locate_scope(ce, fe, methodname_lower);
 
@@ -601,16 +581,7 @@ PHP_FUNCTION(runkit_method_rename)
 	}
 
 	newname_lower = zend_string_tolower(newname);
-	if (newname_lower == NULL) {
-		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-		RETURN_FALSE;
-	}
 	methodname_lower = zend_string_tolower(methodname);
-	if (methodname_lower == NULL) {
-		zend_string_release(newname_lower);
-		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-		RETURN_FALSE;
-	}
 
 	if ((old_fe = zend_hash_find_ptr(&ce->function_table, newname_lower)) != NULL) {
 		if (php_runkit_locate_scope(ce, old_fe, newname_lower) == ce) {

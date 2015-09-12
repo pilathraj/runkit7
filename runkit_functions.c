@@ -58,10 +58,6 @@ static zend_function* php_runkit_fetch_function(zend_string* fname, int flag TSR
 	zend_string* fname_lower;
 
 	fname_lower = zend_string_tolower(fname);
-	if (fname_lower == NULL) {
-		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-		return NULL;
-	}
 
 	if ((fe = zend_hash_find_ptr(EG(function_table), fname_lower)) == NULL) {
 		zend_string_release(fname_lower);
@@ -576,10 +572,6 @@ static void php_runkit_function_add_or_update(INTERNAL_FUNCTION_PARAMETERS, int 
 
 	/* UTODO */
 	funcname_lower = zend_string_tolower(funcname);
-	if (funcname_lower == NULL) {
-		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-		RETURN_FALSE;
-	}
 
 	if (add_or_update == HASH_ADD && zend_hash_exists(EG(function_table), funcname_lower)) {
 		zend_string_release(funcname_lower);
@@ -672,10 +664,6 @@ PHP_FUNCTION(runkit_function_remove)
 	}
 
 	fname_lower = zend_string_tolower(fname);
-	if (fname_lower == NULL) {
-		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-		RETURN_FALSE;
-	}
 
 	php_runkit_remove_function_from_reflection_objects(fe TSRMLS_CC);
 
@@ -704,10 +692,6 @@ PHP_FUNCTION(runkit_function_remove)
 	\
 	/* UTODO */ \
 	dfunc_lower = zend_string_tolower(dfunc); \
-	if (dfunc_lower == NULL) { \
-		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR; \
-		RETURN_FALSE; \
-	} \
 	\
 	if (zend_hash_exists(EG(function_table), dfunc_lower)) { \
 		zend_string_release(dfunc_lower); \
@@ -748,11 +732,6 @@ PHP_FUNCTION(runkit_function_rename)
 	}
 
 	sfunc_lower = zend_string_tolower(sfunc);
-	if (sfunc_lower == NULL) {
-		zend_string_release(dfunc_lower);
-		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-		RETURN_FALSE;
-	}
 
 	php_runkit_remove_function_from_reflection_objects(sfe TSRMLS_CC);
 
@@ -831,11 +810,6 @@ PHP_FUNCTION(runkit_function_copy)
 	}
 
 	sfunc_lower = zend_string_tolower(sfunc);
-	if (sfunc_lower == NULL) {
-		zend_string_release(dfunc_lower);
-		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-		RETURN_FALSE;
-	}
 
 	if (sfe->type == ZEND_USER_FUNCTION) {
 		fe = php_runkit_function_clone(sfe, dfunc TSRMLS_CC);

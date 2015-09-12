@@ -44,10 +44,6 @@ static int php_runkit_remove_inherited_methods(zval *pDest, void *argument TSRML
 	ZEND_ASSERT(Z_TYPE_INFO_P(pDest) == IS_PTR);
 
 	fname_lower = zend_string_tolower(fname);
-	if (fname_lower == NULL) {
-		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-		return ZEND_HASH_APPLY_KEEP;
-	}
 
 	ancestor_class = php_runkit_locate_scope(ce, fe, fname_lower);
 
@@ -160,10 +156,6 @@ static int php_runkit_inherit_methods(zend_function *fe, zend_class_entry *ce TS
 
 	/* method name keys must be lower case */
 	fname_lower = zend_string_copy(fname);
-	if (fname_lower == NULL) {
-		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-		return ZEND_HASH_APPLY_KEEP;
-	}
 
 	if (zend_hash_exists(&ce->function_table, fname_lower)) {
 		zend_string_release(fname_lower);
@@ -202,10 +194,6 @@ int php_runkit_class_copy(zend_class_entry *src, zend_string *classname TSRMLS_D
 	zend_string *classname_lower;
 
 	classname_lower = zend_string_tolower(classname);
-	if (!classname_lower) {
-		PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-		return FAILURE;
-	}
 
 	new_class_entry = emalloc(sizeof(zend_class_entry));
 	if (src->parent && src->parent->name) {

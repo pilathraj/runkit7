@@ -377,10 +377,6 @@ static int php_runkit_import_classes(HashTable *class_table, long flags
 		if (key != NULL) {
 			zend_string *classname = ce->name;
 			zend_string *classname_lower = zend_string_tolower(classname);
-			if (classname_lower == NULL) {
-				PHP_RUNKIT_NOT_ENOUGH_MEMORY_ERROR;
-				return FAILURE;
-			}
 
 			if (!zend_hash_exists(EG(class_table), classname_lower)) {
 				php_runkit_class_copy(ce, ce->name TSRMLS_CC);
