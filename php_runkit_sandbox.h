@@ -102,7 +102,7 @@ inline static void php_runkit_sandbox_call_int(zval *func_name, char **pname, zv
 
 		if (Z_TYPE_P(*sandbox_args[i]) == IS_OBJECT && zend_get_class_entry(*sandbox_args[i], prior_context) == zend_ce_closure) {
 			zend_closure *closure;
-			zend_object_store_bucket *bucket;
+			zend_object *bucket;
 			bucket = php_runkit_zend_object_store_get_obj(*sandbox_args[i], prior_context);
 			closure = (zend_closure *) bucket->bucket.obj.object;
 			(*sandbox_args[i])->value.obj.handle = zend_objects_store_put(closure, NULL, NULL, bucket->bucket.obj.clone TSRMLS_CC);

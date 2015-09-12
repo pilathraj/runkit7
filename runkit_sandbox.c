@@ -1708,7 +1708,7 @@ static zend_object_value php_runkit_sandbox_ctor(zend_class_entry *ce TSRMLS_DC)
 	ALLOC_HASHTABLE(objval->obj.properties);
 	zend_hash_init(objval->obj.properties, 0, NULL, ZVAL_PTR_DTOR, 0);
 
-	retval.handle = zend_objects_store_put(objval, NULL, (zend_objects_free_object_storage_t)php_runkit_sandbox_dtor, NULL TSRMLS_CC);
+	retval.handle = zend_objects_store_put(objval, NULL, php_runkit_sandbox_dtor, NULL TSRMLS_CC);
 	retval.handlers = &php_runkit_sandbox_object_handlers;
 
 	return retval;
@@ -1830,7 +1830,7 @@ static void php_runkit_lint_compile(INTERNAL_FUNCTION_PARAMETERS, int filemode)
 			RETVAL_FALSE;
 		} zend_end_try();
 
-		php_request_shutdown(TSRMLS_C);
+		php_request_shutdown(NULL);
 	}
 	tsrm_set_interpreter_context(NULL);
 	tsrm_free_interpreter_context(context);

@@ -619,10 +619,11 @@ void php_runkit_update_reflection_object_name(zend_object* object, int handle, c
 #ifdef PHP_RUNKIT_SANDBOX
 // TODO: Figure out what the php7 equivalent of zend_object_store_bucket and zend_object_handle are.
 /* {{{ php_runkit_zend_object_store_get_obj */
-inline static zend_object_store_bucket *php_runkit_zend_object_store_get_obj(const zval *zobject TSRMLS_DC)
+inline static zend_object *php_runkit_zend_object_store_get(const zval *zobject TSRMLS_DC)
 {
-	zend_object_handle handle = Z_OBJ_HANDLE_P(zobject);
-	return &EG(objects_store).object_buckets[handle];
+	// Note: Object handle may be removed from _zend_resource in the future.
+	int handle = Z_OBJ_HANDLE_P(zobject);
+	return EG(objects_store).object_buckets[handle];
 }
 /* }}} */
 #endif
