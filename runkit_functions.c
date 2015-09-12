@@ -45,6 +45,9 @@ int php_runkit_check_call_stack(zend_op_array *op_array TSRMLS_DC)
 }
 /* }}} */
 
+/* Temporary function name. This function is manipulated with functions in this file. */
+#define RUNKIT_TEMP_FUNCNAME  "__runkit_temporary_function__"
+
 /* Maintain order */
 #define PHP_RUNKIT_FETCH_FUNCTION_INSPECT	0
 #define PHP_RUNKIT_FETCH_FUNCTION_REMOVE	1
@@ -466,7 +469,19 @@ int php_runkit_generate_lambda_method(const zend_string *arguments, const zend_s
 
 	return SUCCESS;
 }
+
 /* }}} */
+
+/** {{{ php_runkit_cleanup_lambda_method
+    Tries to free the temporary lambda function. If it fails, emits a warning and returns FAILURE.  */
+int php_runkit_cleanup_lambda_method() {
+	if (zend_hash_str_del(EG(function_table), RUNKIT_TEMP_FUNCNAME, sizeof(RUNKIT_TEMP_FUNCNAME) - 1) == FAILURE) {
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to remove temporary function entry");
+		return FAILURE;
+	}
+	return SUCCESS;
+}
+/* }}}*/
 
 /* {{{ php_runkit_destroy_misplaced_functions
 	Wipe old internal functions that were renamed to new targets
@@ -562,7 +577,7 @@ static void php_runkit_function_add_or_update(INTERNAL_FUNCTION_PARAMETERS, int 
 		opt_arg_pos++;
 	}
 
-	php_runkit_parse_doc_comment_arg(argc, args, opt_arg_pos, &doc_comment TSRMLS_CC);
+	doc_comment = php_runkit_parse_doc_comment_arg(argc, args, opt_arg_pos TSRMLS_CC);
 	efree(args);
 
 	if (add_or_update == HASH_UPDATE &&

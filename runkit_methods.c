@@ -124,7 +124,6 @@ int php_runkit_fetch_interface(zend_string* classname, zend_class_entry **pce TS
  */
 static int php_runkit_fetch_class_method(zend_string* classname, zend_string* fname, zend_class_entry **pce, zend_function **pfe TSRMLS_DC)
 {
-	HashTable *ftable = EG(function_table);
 	zend_class_entry *ce;
 	zend_function *fe;
 	zend_string* fname_lower;
@@ -142,19 +141,17 @@ static int php_runkit_fetch_class_method(zend_string* classname, zend_string* fn
 		*pce = ce;
 	}
 
-	ftable = &ce->function_table;
-
 	fname_lower = zend_string_tolower(fname);
 
-	if ((fe = zend_hash_find_ptr(ftable, fname_lower)) == NULL) {
+	if ((fe = zend_hash_find_ptr(&ce->function_table, fname_lower)) == NULL) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s::%s() not found", ZSTR_VAL(classname), ZSTR_VAL(fname));
 		zend_string_release(fname_lower);
 		return FAILURE;
 	}
 
+	zend_string_release(fname_lower);
 	if (fe->type != ZEND_USER_FUNCTION) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s::%s() is not a user function", ZSTR_VAL(classname), ZSTR_VAL(fname));
-		zend_string_release(fname_lower);
 		return FAILURE;
 	}
 
@@ -162,7 +159,6 @@ static int php_runkit_fetch_class_method(zend_string* classname, zend_string* fn
 		*pfe = fe;
 	}
 
-	zend_string_release(fname_lower);
 	return SUCCESS;
 }
 /* }}} */
@@ -317,14 +313,14 @@ static void php_runkit_method_add_or_update(INTERNAL_FUNCTION_PARAMETERS, int ad
 		}
 	}
 
-	php_runkit_parse_doc_comment_arg(argc, args, opt_arg_pos + 1, &doc_comment TSRMLS_CC);
+	doc_comment = php_runkit_parse_doc_comment_arg(argc, args, opt_arg_pos + 1);
 
 	efree(args);
 
 	methodname_lower = zend_string_tolower(methodname);
 
 	if (add_or_update == HASH_UPDATE) {
-		if (php_runkit_fetch_class_method(classname, methodname, &ce, &fe TSRMLS_CC) == FAILURE) {
+		if (php_runkit_fetch_class_method(classname, methodname_lower, &ce, &fe TSRMLS_CC) == FAILURE) {
 			zend_string_release(methodname_lower);
 			RETURN_FALSE;
 		}
@@ -400,14 +396,13 @@ static void php_runkit_method_add_or_update(INTERNAL_FUNCTION_PARAMETERS, int ad
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to add method to class");
 		php_runkit_function_dtor(func);
 		zend_string_release(methodname_lower);
-		if (remove_temp && zend_hash_str_del(EG(function_table), RUNKIT_TEMP_FUNCNAME, sizeof(RUNKIT_TEMP_FUNCNAME) - 1) == FAILURE) {
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to remove temporary function entry");
+		if (remove_temp) {
+			php_runkit_cleanup_lambda_method();
 		}
 		RETURN_FALSE;
 	}
 
-	if (remove_temp && zend_hash_str_del(EG(function_table), RUNKIT_TEMP_FUNCNAME, sizeof(RUNKIT_TEMP_FUNCNAME) - 1) == FAILURE) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to remove temporary function entry");
+	if (remove_temp && php_runkit_cleanup_lambda_method() == FAILURE) {
 		zend_string_release(methodname_lower);
 		RETURN_FALSE;
 	}

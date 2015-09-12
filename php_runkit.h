@@ -241,6 +241,7 @@ zend_function* php_runkit_function_clone(zend_function *fe, zend_string *newname
 void php_runkit_function_dtor(zend_function *fe);
 int php_runkit_generate_lambda_method(const zend_string *arguments, const zend_string *phpcode,
                                       zend_function **pfe, zend_bool return_ref TSRMLS_DC);
+int php_runkit_cleanup_lambda_method();
 int php_runkit_destroy_misplaced_functions(zval *pDest TSRMLS_DC);
 int php_runkit_restore_internal_functions(RUNKIT_53_TSRMLS_ARG(zval *pDest), int num_args, va_list args, zend_hash_key *hash_key);
 int php_runkit_clean_zval(zval **val TSRMLS_DC);
@@ -514,14 +515,16 @@ inline static void PHP_RUNKIT_INHERIT_MAGIC(zend_class_entry *ce, const zend_fun
 }
 
 /* {{{ php_runkit_parse_doc_comment_arg */
-inline static void php_runkit_parse_doc_comment_arg(int argc, zval *args, int arg_pos, zend_string** pdoc_comment) {
+inline static zend_string* php_runkit_parse_doc_comment_arg(int argc, zval *args, int arg_pos) {
 	if (argc > arg_pos) {
 		if (Z_TYPE(args[arg_pos]) == IS_STRING) {
-			*pdoc_comment = Z_STR(args[arg_pos]);
+			// Return doc comment without increasing reference count.
+			return Z_STR(args[arg_pos]);
 		} else if (Z_TYPE(args[arg_pos]) != IS_NULL) {
 			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Doc comment should be a string or NULL");
 		}
 	}
+	return NULL;
 }
 /* }}} */
 
