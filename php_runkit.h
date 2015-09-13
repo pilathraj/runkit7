@@ -27,9 +27,11 @@
 #endif
 
 
+#pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#pragma GCC diagnostic ignored "-Wpedantic"
   #include "php.h"
-#pragma GCC diagnostic error "-Wdeprecated-declarations"
+#pragma GCC diagnostic pop
 
 #include "php_ini.h"
 #include "ext/standard/info.h"
@@ -174,7 +176,7 @@ ZEND_BEGIN_MODULE_GLOBALS(runkit)
 ZEND_END_MODULE_GLOBALS(runkit)
 #endif
 
-extern ZEND_DECLARE_MODULE_GLOBALS(runkit);
+extern ZEND_DECLARE_MODULE_GLOBALS(runkit)
 
 #ifdef ZTS
 #define		RUNKIT_G(v)		TSRMG(runkit_globals_id, zend_runkit_globals *, v)
