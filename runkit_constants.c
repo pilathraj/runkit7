@@ -84,6 +84,8 @@ static void php_runkit_update_children_consts_foreach(HashTable *ht, zend_class_
 		php_runkit_update_children_consts(ce, parent_class, c, cname);
 	} ZEND_HASH_FOREACH_END();
 }
+/* }}} */
+
 /* {{{ php_runkit_update_children_consts
 	Scan the class_table for children of the class just updated */
 void php_runkit_update_children_consts(zend_class_entry *ce, zend_class_entry *parent_class, zval *c, zend_string *cname)
@@ -106,31 +108,31 @@ void php_runkit_update_children_consts(zend_class_entry *ce, zend_class_entry *p
 }
 /* }}} */
 
-/* {{{ php_runkit_constant_remove
- */
-static int php_runkit_constant_remove(zend_string* classname, zend_string* constname TSRMLS_DC)
-{
+/* {{{ php_runkit_class_constant_remove */
+static int php_runkit_class_constant_remove(zend_string *classname, zend_string *constname) {
+	zend_class_entry *ce;
+
+	if ((ce = php_runkit_fetch_class(classname)) == NULL) {
+		return FAILURE;
+	}
+
+	if (!zend_hash_exists(&ce->constants_table, constname)) {
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Constant %s::%s does not exist", ZSTR_VAL(classname), ZSTR_VAL(constname));
+		return FAILURE;
+	}
+	if (zend_hash_del(&ce->constants_table, constname)==FAILURE) {
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to remove constant %s::%s", ZSTR_VAL(classname), ZSTR_VAL(constname));
+		return FAILURE;
+	}
+	php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
+	return SUCCESS;
+}
+/* }}}*/
+
+/* {{{ php_runkit_global_constant_remove */
+static int php_runkit_global_constant_remove(zend_string *constname TSRMLS_DC) {
 	zend_constant *constant;
 	char *found_constname;
-
-	if (classname && ZSTR_LEN(classname) > 0) {
-		zend_class_entry *ce;
-
-		if (php_runkit_fetch_class(classname, &ce TSRMLS_CC)==FAILURE) {
-			return FAILURE;
-		}
-
-		if (!zend_hash_exists(&ce->constants_table, constname)) {
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Constant %s::%s does not exist", ZSTR_VAL(classname), ZSTR_VAL(constname));
-			return FAILURE;
-		}
-		if (zend_hash_del(&ce->constants_table, constname)==FAILURE) {
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to remove constant %s::%s", ZSTR_VAL(classname), ZSTR_VAL(constname));
-			return FAILURE;
-		}
-		php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
-		return SUCCESS;
-	}
 
 	if (php_runkit_fetch_const(constname, &constant, &found_constname TSRMLS_CC) == FAILURE) {
 		return FAILURE;
@@ -154,12 +156,19 @@ static int php_runkit_constant_remove(zend_string* classname, zend_string* const
 }
 /* }}} */
 
-/* {{{ php_runkit_constant_add
+/* {{{ php_runkit_constant_remove
  */
-static int php_runkit_constant_add(zend_string* classname, zend_string* constname, zval *value TSRMLS_DC)
+static int php_runkit_constant_remove(zend_string* classname, zend_string* constname TSRMLS_DC)
 {
-	zend_class_entry *ce;
+	if (classname && ZSTR_LEN(classname) > 0) {
+		return php_runkit_class_constant_remove(classname, constname);
+	}
+	return php_runkit_global_constant_remove(constname);
+}
+/* }}} */
 
+/* {{{ php_runkit_has_constant_type */
+static zend_bool php_runkit_has_constant_type(const zval *value) {
 	switch (Z_TYPE_P(value)) {
 		case IS_LONG:
 		case IS_DOUBLE:
@@ -168,32 +177,38 @@ static int php_runkit_constant_add(zend_string* classname, zend_string* constnam
 		case IS_FALSE:
 		case IS_RESOURCE:
 		case IS_NULL:
-			break;
+			return 1;
 		default:
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Constants may only evaluate to scalar values");
-			return FAILURE;
+			return 0;
+	}
+}
+/* }}} */
+
+/* {{{ php_runkit_global_constant_add */
+static int php_runkit_global_constant_add(zend_string *constname, zval *value TSRMLS_DC) {
+	zend_constant c;
+
+	// TODO: Memory management properly
+	if (ZSTR_LEN(constname) > 0 && ZSTR_VAL(constname)[0] == '\\') {
+		constname = zend_string_init(ZSTR_VAL(constname) + 1, ZSTR_LEN(constname) - 1, 0);
+	} else {
+		zend_string_addref(constname);
 	}
 
-	if ((classname == NULL) || (ZSTR_LEN(classname) == 0)) {
-		zend_constant c;
+	/* Traditional global constant */
+	c.value = *value;
+	zval_copy_ctor(&c.value);
+	c.flags = CONST_CS;
+	c.name = constname;
+	c.module_number = PHP_USER_CONSTANT;
+	return zend_register_constant(&c TSRMLS_CC);
+}
+/* }}} */
 
-		// TODO: Memory management properly
-		if (ZSTR_LEN(constname) > 0 && ZSTR_VAL(constname)[0] == '\\') {
-			constname = zend_string_init(ZSTR_VAL(constname) + 1, ZSTR_LEN(constname) - 1, 0);
-		} else {
-			zend_string_addref(constname);
-		}
-
-		/* Traditional global constant */
-		c.value = *value;
-		zval_copy_ctor(&c.value);
-		c.flags = CONST_CS;
-		c.name = constname;
-		c.module_number = PHP_USER_CONSTANT;
-		return zend_register_constant(&c TSRMLS_CC);
-	}
-
-	if (php_runkit_fetch_class(classname, &ce TSRMLS_CC)==FAILURE) {
+/* {{{ php_runkit_class_constant_add */
+static int php_runkit_class_constant_add(zend_string *classname, zend_string *constname, zval *value TSRMLS_DC) {
+	zend_class_entry *ce;
+	if ((ce = php_runkit_fetch_class(classname)) == NULL) {
 		return FAILURE;
 	}
 
@@ -210,6 +225,23 @@ static int php_runkit_constant_add(zend_string* classname, zend_string* constnam
 	php_runkit_update_children_consts_foreach(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), ce, value, constname);
 
 	return SUCCESS;
+}
+/* }}} */
+
+/* {{{ php_runkit_constant_add
+       Adds a global or class constant value. This is a global constant if classname is empty or null. */
+static int php_runkit_constant_add(zend_string* classname, zend_string* constname, zval *value TSRMLS_DC)
+{
+	if (!php_runkit_has_constant_type(value)) {
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Constants may only evaluate to scalar values");
+		return FAILURE;
+	}
+
+	if ((classname == NULL) || (ZSTR_LEN(classname) == 0)) {
+		return php_runkit_global_constant_add(constname, value TSRMLS_CC);
+	}
+
+	return php_runkit_class_constant_add(classname, constname, value);
 }
 /* }}} */
 
@@ -231,6 +263,7 @@ PHP_FUNCTION(runkit_constant_redefine)
 
 	PHP_RUNKIT_SPLIT_PN(classname, constname);
 
+	// Remove the constant; add a new constant.
 	php_runkit_constant_remove(classname, constname TSRMLS_CC);
 	result = php_runkit_constant_add(classname, constname, value TSRMLS_CC) == SUCCESS;
 	PHP_RUNKIT_SPLIT_PN_CLEANUP(classname, constname);

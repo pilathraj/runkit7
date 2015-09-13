@@ -359,23 +359,20 @@ static void php_runkit_register_auto_global(char *s, int len TSRMLS_DC)
 	}
 }
 /* }}} */
-#endif /* PHP_RUNKIT_SUPERGLOBALS */
 
-/* {{{ PHP_RINIT_FUNCTION
- */
-PHP_RINIT_FUNCTION(runkit)
-{
-#ifdef PHP_RUNKIT_SUPERGLOBALS
-	char *s = INI_STR("runkit.superglobal"), *p;
+/* {{{ php_runkit_rinit_register_superglobals */
+static void php_runkit_rinit_register_superglobals(const char *ini_s) {
+	char *s;
+	char *p;
 	char *dup;
 	int len;
 
 	RUNKIT_G(superglobals) = NULL;
-	if (!s || !strlen(s)) {
-		goto no_superglobals_defined;
+	if (!ini_s || !strlen(ini_s)) {
+		return;
 	}
 
-	s = dup = estrdup(s);
+	s = dup = estrdup(ini_s);
 	p = strchr(s, ',');
 	while(p) {
 		if (p - s) {
@@ -391,7 +388,16 @@ PHP_RINIT_FUNCTION(runkit)
 		php_runkit_register_auto_global(s, len TSRMLS_CC);
 	}
 	efree(dup);
-no_superglobals_defined:
+}
+/* }}} */
+#endif /* PHP_RUNKIT_SUPERGLOBALS */
+
+/* {{{ PHP_RINIT_FUNCTION
+ */
+PHP_RINIT_FUNCTION(runkit)
+{
+#ifdef PHP_RUNKIT_SUPERGLOBALS
+	php_runkit_rinit_register_superglobals(INI_STR("runkit.superglobal"));
 #endif /* PHP_RUNKIT_SUPERGLOBALS */
 
 #ifdef PHP_RUNKIT_SANDBOX
@@ -412,7 +418,7 @@ no_superglobals_defined:
 /* {{{ php_runkit_superglobal_dtor */
 static int php_runkit_superglobal_dtor(zval *zv TSRMLS_DC)
 {
-	// TODO: check types.
+	ZEND_ASSERT(Z_TYPE_P(zv) == IS_STRING);
 	zend_hash_del(CG(auto_globals), Z_STR_P(zv));
 
 	return ZEND_HASH_APPLY_REMOVE;
@@ -424,10 +430,8 @@ static int php_runkit_superglobal_dtor(zval *zv TSRMLS_DC)
  */
 PHP_RSHUTDOWN_FUNCTION(runkit)
 {
-#if PHP_MAJOR_VERSION == 5 && PHP_MINOR_VERSION >= 4 || PHP_MAJOR_VERSION > 5
 #ifdef PHP_RUNKIT_MANIPULATION
 	php_runkit_default_class_members_list_element *el;
-#endif
 #endif
 
 #ifdef PHP_RUNKIT_SUPERGLOBALS

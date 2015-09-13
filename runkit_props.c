@@ -200,6 +200,7 @@ int php_runkit_def_prop_add_int(zend_class_entry *ce, zend_string* propname, zva
 		}
 	}
 	prop_info_ptr = NULL;
+	zend_string_addref(propname);
 
 	if (zend_declare_property_ex(ce, propname, pcopyval, visibility, doc_comment TSRMLS_CC) == FAILURE) {
 		zval_ptr_dtor(pcopyval);
@@ -343,7 +344,7 @@ static int php_runkit_def_prop_add(zend_string *classname, zend_string *propname
 	zval *copyval;
 	zend_property_info *existing_prop;
 
-	if (php_runkit_fetch_class_int(classname, &ce TSRMLS_CC)==FAILURE) {
+	if ((ce = php_runkit_fetch_class_int(classname)) == NULL) {
 		return FAILURE;
 	}
 
@@ -509,7 +510,7 @@ static int php_runkit_def_prop_remove(zend_string *classname, zend_string *propn
 {
 	zend_class_entry *ce;
 
-	if (php_runkit_fetch_class_int(classname, &ce TSRMLS_CC) == FAILURE) {
+	if ((ce = php_runkit_fetch_class_int(classname)) == NULL) {
 		return FAILURE;
 	}
 

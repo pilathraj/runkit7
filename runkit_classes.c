@@ -94,12 +94,12 @@ PHP_FUNCTION(runkit_class_emancipate)
 		RETURN_FALSE;
 	}
 
-	if (php_runkit_fetch_class(classname, &ce TSRMLS_CC) == FAILURE) {
+	if ((ce = php_runkit_fetch_class(classname)) == NULL) {
 		RETURN_FALSE;
 	}
 
 	if (!ce->parent) {
-		php_error_docref(NULL TSRMLS_CC, E_NOTICE, "Class %s has no parent to emancipate from", classname);
+		php_error_docref(NULL TSRMLS_CC, E_NOTICE, "Class %s has no parent to emancipate from", ZSTR_VAL(classname));
 		RETURN_TRUE;
 	}
 
@@ -165,7 +165,7 @@ static int php_runkit_inherit_methods(zend_function *fe, zend_class_entry *ce TS
 	ancestor_class = php_runkit_locate_scope(ce, fe, fname_lower);
 
 	if (runkit_zend_hash_add_or_update_ptr(&ce->function_table, fname_lower, fe, HASH_ADD) == NULL) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Error inheriting parent method: %s()", fe->common.function_name);
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Error inheriting parent method: %s()", ZSTR_VAL(fe->common.function_name));
 		zend_string_release(fname_lower);
 		return ZEND_HASH_APPLY_KEEP;
 	}
@@ -197,7 +197,7 @@ int php_runkit_class_copy(zend_class_entry *src, zend_string *classname TSRMLS_D
 
 	new_class_entry = emalloc(sizeof(zend_class_entry));
 	if (src->parent && src->parent->name) {
-		php_runkit_fetch_class_int(src->parent->name, &parent TSRMLS_CC);
+		parent = php_runkit_fetch_class_int(src->parent->name);
 	}
 	new_class_entry->type = ZEND_USER_CLASS;
 	new_class_entry->name = classname;
@@ -240,7 +240,7 @@ PHP_FUNCTION(runkit_class_adopt)
 		RETURN_FALSE;
 	}
 
-	if (php_runkit_fetch_class(classname, &ce TSRMLS_CC) == FAILURE) {
+	if ((ce = php_runkit_fetch_class(classname)) == NULL) {
 		RETURN_FALSE;
 	}
 
@@ -249,7 +249,7 @@ PHP_FUNCTION(runkit_class_adopt)
 		RETURN_FALSE;
 	}
 
-	if (php_runkit_fetch_class(parentname, &parent TSRMLS_CC) == FAILURE) {
+	if ((parent = php_runkit_fetch_class(parentname, &parent TSRMLS_CC)) == NULL) {
 		RETURN_FALSE;
 	}
 

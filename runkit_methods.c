@@ -24,82 +24,51 @@
 #ifdef PHP_RUNKIT_MANIPULATION
 
 /* {{{ _php_runkit_get_method_prototype
-	Locates the prototype method */
+	Locates the prototype method with name func_lower in the inheritance chain of ce. */
 static inline zend_function* _php_runkit_get_method_prototype(zend_class_entry *ce, zend_string* func_lower TSRMLS_DC) {
 	zend_class_entry *pce = ce;
 	zend_function *proto = NULL;
 
 	while (pce) {
 		if ((proto = zend_hash_find_ptr(&pce->function_table, func_lower)) != NULL) {
-			break;
+			return proto;
 		}
 		pce = pce->parent;
 	}
-	if (!pce) {
-		proto = NULL;
-	}
-	return proto;
+	return NULL;
 }
 /* }}} */
 
 /* {{{ php_runkit_fetch_class_int
- */
-int php_runkit_fetch_class_int(zend_string* classname, zend_class_entry **pce TSRMLS_DC)
-{
-	// TODO: IS_PTR and get the class entry?
-	zend_class_entry *ce;
-	zend_string* classname_lower;
-
-	/* Ignore leading "\" */
-	if (ZSTR_VAL(classname)[0] == '\\') {
-		// TODO: replace the string.... and track reference counts
-		classname = zend_string_init(ZSTR_VAL(classname) + 1, ZSTR_LEN(classname) - 1, /*persistent = */ 0);
-	}
-
-
-	classname_lower = zend_string_tolower(classname);
-
-	// TODO: Replace with ce = zend_lookup_class(classname or classname_lower)?
-	if ((ce = zend_hash_find_ptr(EG(class_table), classname_lower)) == NULL) {
-		zend_string_release(classname_lower);
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Class %s not found", ZSTR_VAL(classname));
-		return FAILURE;
-	}
-
-	if (pce) {
-		*pce = ce;
-	}
-
-	zend_string_release(classname_lower);
-	return SUCCESS;
+       Fetches the class entry **without** using the autoloader.
+	   This could be any class entry type (interface, user-defined class, internal class, etc.) */
+zend_class_entry *php_runkit_fetch_class_int(zend_string *classname) {
+	return zend_lookup_class_ex(classname, (zval*) /* key = */ NULL, /* use_autoload = */ (int)0);
 }
 /* }}} */
 
 /* {{{ php_runkit_fetch_class
- */
-int php_runkit_fetch_class(zend_string *classname, zend_class_entry **pce TSRMLS_DC)
+       Fetches a class entry which can be modified by runkit. Returns NULL if class entry is missing or it is an internal class */
+zend_class_entry *php_runkit_fetch_class(zend_string *classname)
 {
 	zend_class_entry *ce;
 
-	if (php_runkit_fetch_class_int(classname, &ce TSRMLS_CC) == FAILURE) {
-		return FAILURE;
+	if ((ce = php_runkit_fetch_class_int(classname)) == NULL) {
+		return NULL;
 	}
 
 	if (ce->type != ZEND_USER_CLASS) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "class %s is not a user-defined class", ZSTR_VAL(classname));
-		return FAILURE;
+		return NULL;
 	}
 
 	if (ce->ce_flags & ZEND_ACC_INTERFACE) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "class %s is an interface", ZSTR_VAL(classname));
-		return FAILURE;
+		return NULL;
 	}
+	// TODO: What about traits? (ZEND_ACC_TRAIT)
 
-	if (pce) {
-		*pce = ce;
-	}
-
-	return SUCCESS;
+	return ce;
 }
 /* }}} */
 
@@ -107,7 +76,7 @@ int php_runkit_fetch_class(zend_string *classname, zend_class_entry **pce TSRMLS
  */
 int php_runkit_fetch_interface(zend_string* classname, zend_class_entry **pce TSRMLS_DC)
 {
-	if (php_runkit_fetch_class_int(classname, pce TSRMLS_CC) == FAILURE) {
+	if ((*pce = php_runkit_fetch_class_int(classname)) == NULL) {
 		return FAILURE;
 	}
 
@@ -128,7 +97,7 @@ static int php_runkit_fetch_class_method(zend_string* classname, zend_string* fn
 	zend_function *fe;
 	zend_string* fname_lower;
 
-	if (php_runkit_fetch_class_int(classname, &ce TSRMLS_CC) == FAILURE) {
+	if ((ce = php_runkit_fetch_class_int(classname)) == NULL) {
 		return FAILURE;
 	}
 
@@ -333,7 +302,7 @@ static void php_runkit_method_add_or_update(INTERNAL_FUNCTION_PARAMETERS, int ad
 			RETURN_FALSE;
 		}
 	} else {
-		if (php_runkit_fetch_class(classname, &ce TSRMLS_CC) == FAILURE) {
+		if ((ce = php_runkit_fetch_class(classname)) == NULL) {
 			zend_string_release(methodname_lower);
 			RETURN_FALSE;
 		}
@@ -438,7 +407,7 @@ static int php_runkit_method_copy(zend_string *dclass, zend_string* dfunc, zend_
 		return FAILURE;
 	}
 
-	if (php_runkit_fetch_class(dclass, &dce TSRMLS_CC) == FAILURE) {
+	if ((dce = php_runkit_fetch_class(dclass)) == NULL) {
 		return FAILURE;
 	}
 

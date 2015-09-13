@@ -383,7 +383,7 @@ static int php_runkit_import_classes(HashTable *class_table, long flags
 			}
 			zend_string_release(classname_lower);
 
-			if (php_runkit_fetch_class(ce->name, &dce TSRMLS_CC) == FAILURE) {
+			if ((dce = php_runkit_fetch_class(ce->name, &dce TSRMLS_CC)) == NULL) {
 				/* Oddly non-existant target class or error retreiving it... Or it's an internal class... */
 				php_error_docref(NULL TSRMLS_CC, E_WARNING, "Cannot redeclare class %s", ZSTR_VAL(ce->name));
 				continue;
@@ -559,7 +559,7 @@ PHP_FUNCTION(runkit_import)
 			// TODO: Check if it's still op2, figure out the set of expected opcodes
 			zval *op2_zv = RT_CONSTANT_EX(new_op_array->literals, new_op_array->opcodes[opline_num - 1].op2);
 
-			if (Z_TYPE_INFO_P(op2_zv) == IS_STRING && php_runkit_fetch_class_int(Z_STR_P(op2_zv), &pce TSRMLS_CC) == SUCCESS) {
+			if (Z_TYPE_INFO_P(op2_zv) == IS_STRING && (pce = php_runkit_fetch_class_int(Z_STR_P(op2_zv))) == NULL) {
 				do_bind_inherited_class(new_op_array, &new_op_array->opcodes[opline_num], tmp_class_table, pce, 0 TSRMLS_CC);
 			}
 			opline_num = new_op_array->opcodes[opline_num].result.opline_num;

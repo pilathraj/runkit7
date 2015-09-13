@@ -247,8 +247,8 @@ int php_runkit_restore_internal_functions(RUNKIT_53_TSRMLS_ARG(zval *pDest), int
 int php_runkit_clean_zval(zval **val TSRMLS_DC);
 
 /* runkit_methods.c */
-int php_runkit_fetch_class(zend_string* classname, zend_class_entry **pce TSRMLS_DC);
-int php_runkit_fetch_class_int(zend_string *classname, zend_class_entry **pce TSRMLS_DC);
+zend_class_entry *php_runkit_fetch_class(zend_string* classname);
+zend_class_entry *php_runkit_fetch_class_int(zend_string *classname);
 void php_runkit_clean_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), zend_class_entry *ancestor_class, zend_class_entry *parent_class, zend_string *fname_lower, zend_function *orig_cfe);
 void php_runkit_clean_children_methods_foreach(RUNKIT_53_TSRMLS_ARG(HashTable *ht), zend_class_entry *ancestor_class, zend_class_entry *parent_class, zend_string *fname_lower, zend_function *orig_cfe);
 void php_runkit_update_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), zend_class_entry *ancestor_class, zend_class_entry *parent_class, zend_function *fe, zend_string *fname_lower, zend_function *orig_fe);
