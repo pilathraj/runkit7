@@ -41,7 +41,7 @@ static int php_runkit_remove_inherited_methods(zval *pDest, void *argument TSRML
 	zend_string * const fname = fe->common.function_name;
 	zend_string *fname_lower;
 	zend_class_entry *ancestor_class;
-	ZEND_ASSERT(Z_TYPE_INFO_P(pDest) == IS_PTR);
+	ZEND_ASSERT(Z_TYPE_P(pDest) == IS_PTR);
 
 	fname_lower = zend_string_tolower(fname);
 

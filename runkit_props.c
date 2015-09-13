@@ -84,7 +84,7 @@ static int php_runkit_remove_property_by_full_name(zval *pDest, void *argument) 
 	const zend_property_info *prop = Z_PTR_P(pDest);
 	const zend_property_info *comp_prop = (zend_property_info*) argument;
 
-	ZEND_ASSERT(Z_TYPE_INFO_P(pDest) == IS_PTR);
+	ZEND_ASSERT(Z_TYPE_P(pDest) == IS_PTR);
 
 	if (ZSTR_H(prop->name) == ZSTR_H(comp_prop->name) && zend_string_equals(comp_prop->name, prop->name)) {
 		return ZEND_HASH_APPLY_REMOVE;

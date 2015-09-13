@@ -354,9 +354,7 @@ static int php_runkit_import_classes(HashTable *class_table, long flags
 		zend_class_entry *ce = NULL;
 		zend_class_entry *dce;
 
-
-		// TODO: Replace get_current_data_ex with a different loop
-		if (Z_TYPE_INFO_P(ce_zv) != IS_PTR) {
+		if (Z_TYPE_P(ce_zv) != IS_PTR) {
 			php_error_docref(NULL TSRMLS_CC, E_ERROR, "Non-class in class table!");
 			return FAILURE;
 		}
@@ -434,7 +432,7 @@ static zend_op_array *php_runkit_compile_filename(int type, zval *filename TSRML
 	zend_op_array *retval;
 	zend_string *opened_path = NULL;
 
-	if (Z_TYPE_INFO_P(filename) != IS_STRING) {
+	if (Z_TYPE_P(filename) != IS_STRING) {
 		tmp = *filename;
 		zval_copy_ctor(&tmp);
 		convert_to_string(&tmp);
@@ -559,7 +557,7 @@ PHP_FUNCTION(runkit_import)
 			// TODO: Check if it's still op2, figure out the set of expected opcodes
 			zval *op2_zv = RT_CONSTANT_EX(new_op_array->literals, new_op_array->opcodes[opline_num - 1].op2);
 
-			if (Z_TYPE_INFO_P(op2_zv) == IS_STRING && (pce = php_runkit_fetch_class_int(Z_STR_P(op2_zv))) == NULL) {
+			if (Z_TYPE_P(op2_zv) == IS_STRING && (pce = php_runkit_fetch_class_int(Z_STR_P(op2_zv))) == NULL) {
 				do_bind_inherited_class(new_op_array, &new_op_array->opcodes[opline_num], tmp_class_table, pce, 0 TSRMLS_CC);
 			}
 			opline_num = new_op_array->opcodes[opline_num].result.opline_num;
