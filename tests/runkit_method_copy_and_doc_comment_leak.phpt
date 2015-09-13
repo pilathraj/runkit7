@@ -5,6 +5,7 @@ runkit_method_copy() function and doc_comment - test if one call to copy will le
 --INI--
 display_errors=on
 --FILE--
+<?php
 ini_set('error_reporting', E_ALL);
 
 class runkit_class {
