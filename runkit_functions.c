@@ -379,15 +379,35 @@ void php_runkit_clear_all_functions_runtime_cache(TSRMLS_D)
 }
 /* }}} */
 
+/* {{{ php_runkit_reflection_update_property */
+static void php_runkit_reflection_update_property(zval* object, const char* name, zval* value) {
+	// Copied from ext/reflection's reflection_update_property
+	zval member;
+	ZVAL_STRING(&member, name);
+	zend_std_write_property(object, &member, value, NULL);
+	if (Z_REFCOUNTED_P(value)) Z_DELREF_P(value);
+	zval_ptr_dtor(&member);
+}
+/* }}} */
+
 /* {{{ php_runkit_update_reflection_object_name */
 void php_runkit_update_reflection_object_name(zend_object* object, int handle, const char* name) {
-	zval obj, zvname, zvnew_name;
+	zval obj, prop_value;
 	ZVAL_OBJ(&obj, object);
-	// TODO: I don't know what this function/macro was meant to do.
-	ZVAL_STRING(&zvname, RUNKIT_G(name_str));
-	ZVAL_STRING(&zvnew_name, (name));
-	// TODO: assign this.
-	zend_std_write_property(&obj, &zvname, &zvnew_name, NULL TSRMLS_CC);
+	ZVAL_STRING(&prop_value, name);
+	php_runkit_reflection_update_property(&obj, RUNKIT_G(name_str), &prop_value);
+}
+/* }}} */
+
+/* {{{ php_runkit_free_reflection_function */
+static void php_runkit_free_reflection_function(zend_function *fptr) {
+	// Exact copy of ext/reflection's _free_function
+	if (fptr
+		&& (fptr->internal_function.fn_flags & ZEND_ACC_CALL_VIA_TRAMPOLINE))
+	{
+		zend_string_release(fptr->internal_function.function_name);
+		zend_free_trampoline(fptr);
+	}
 }
 /* }}} */
 
@@ -397,6 +417,34 @@ static inline reflection_object *reflection_object_from_obj(zend_object *obj) {
 	return (reflection_object*)((char*)(obj) - XtOffsetOf(reflection_object, zo));
 }
 /* }}} */
+
+/* {{{ php_runkit_delete_reflection_function_ptr
+ 	Frees the parts of a reflection object referring to the removed method/function(/parameter?)  */
+static void php_runkit_delete_reflection_function_ptr(reflection_object *intern TSRMLS_DC) {
+	// Copied from ext/reflection's reflection_free_objects_storage
+	parameter_reference *reference;
+	if (intern->ptr) {
+		switch(intern->ref_type) {
+			case REF_TYPE_PARAMETER:
+				reference = (parameter_reference*)intern->ptr;
+				php_runkit_free_reflection_function(reference->fptr);
+				efree(intern->ptr);
+				break;
+			case REF_TYPE_FUNCTION:
+				php_runkit_free_reflection_function(intern->ptr);
+				break;
+			case REF_TYPE_PROPERTY:
+				efree(intern->ptr);
+				break;
+			default:
+				php_error_docref(NULL TSRMLS_CC, E_ERROR, "Attempted to free ReflectionObject of unexpected REF_TYPE %d\n", (int) (intern->ref_type));
+				return;
+		}
+	}
+	intern->ptr = NULL;
+	// Do NOT call object destructors yet - ReflectionObject will do that in __destruct.
+}
+/* }}}*/
 
 /* {{{ php_runkit_remove_function_from_reflection_objects */
 void php_runkit_remove_function_from_reflection_objects(zend_function *fe TSRMLS_DC) {
@@ -409,7 +457,7 @@ void php_runkit_remove_function_from_reflection_objects(zend_function *fe TSRMLS
 		if (object->ce == reflection_function_ptr) {
 			reflection_object *refl_obj = reflection_object_from_obj(object);
 			if (refl_obj->ptr == fe) {
-				PHP_RUNKIT_DELETE_REFLECTION_FUNCTION_PTR(refl_obj);
+				php_runkit_delete_reflection_function_ptr(refl_obj);
 				refl_obj->ptr = RUNKIT_G(removed_function);
 				php_runkit_update_reflection_object_name(object, i, RUNKIT_G(removed_function_str));
 			}
@@ -423,7 +471,7 @@ void php_runkit_remove_function_from_reflection_objects(zend_function *fe TSRMLS
 				f->internal_function.fn_flags |= ZEND_ACC_CALL_VIA_HANDLER; // This is a trigger to free it from destructor
 #endif
 				zend_string_addref(f->internal_function.function_name);
-				PHP_RUNKIT_DELETE_REFLECTION_FUNCTION_PTR(refl_obj);
+				php_runkit_delete_reflection_function_ptr(refl_obj);
 				refl_obj->ptr = f;
 				php_runkit_update_reflection_object_name(object, i, RUNKIT_G(removed_method_str));
 			}
@@ -431,7 +479,7 @@ void php_runkit_remove_function_from_reflection_objects(zend_function *fe TSRMLS
 			reflection_object *refl_obj = reflection_object_from_obj(object);
 			parameter_reference *reference = (parameter_reference *) refl_obj->ptr;
 			if (reference && reference->fptr == fe) {
-				PHP_RUNKIT_DELETE_REFLECTION_FUNCTION_PTR(refl_obj);
+				php_runkit_delete_reflection_function_ptr(refl_obj);
 				refl_obj->ptr = NULL;
 				php_runkit_update_reflection_object_name(object, i, RUNKIT_G(removed_parameter_str));
 			}

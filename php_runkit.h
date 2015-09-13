@@ -572,15 +572,6 @@ inline static zend_bool php_runkit_parse_function_arg(int argc, zval *args, int 
 // TODO: move to a separate file.
 void php_runkit_update_reflection_object_name(zend_object* object, int handle, const char* name);
 
-#	define PHP_RUNKIT_DELETE_REFLECTION_FUNCTION_PTR(obj) { \
-		if ((obj)->ptr \
-			&& ((zend_function *)(obj)->ptr)->type == ZEND_INTERNAL_FUNCTION \
-			&& (((zend_function *)(obj)->ptr)->internal_function.fn_flags & ZEND_ACC_CALL_VIA_HANDLER) != 0) { \
-			zend_string_release(((zend_function *)(obj)->ptr)->internal_function.function_name); \
-			efree((obj)->ptr); \
-		} \
-	}
-
 	// These struct definitions must be identical to those in ext/reflection/php_reflection.c
 
 	/* Struct for properties */
