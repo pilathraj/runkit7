@@ -181,7 +181,7 @@ extern ZEND_DECLARE_MODULE_GLOBALS(runkit);
 #define RUNKIT_TSRMLS_C		TSRMLS_C
 #else
 #define		RUNKIT_G(v)		(runkit_globals.v)
-#define RUNKIT_TSRMLS_C		NULL
+#define RUNKIT_TSRMLS_C		, NULL
 #endif
 
 #define RUNKIT_IS_CALLABLE(cb_zv, flags, cb_sp) zend_is_callable((cb_zv), (flags), (cb_sp) TSRMLS_CC)
