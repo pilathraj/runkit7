@@ -41,4 +41,7 @@ Mocked
 New mocked
 New
 
-Fatal error: Call to undefined method Test\Foo::n() in %s on line %d
+Fatal error: Uncaught Error: Call to undefined method Test\Foo::n() in %s:%d
+Stack trace:
+#0 {main}
+  thrown in %s on line %d
