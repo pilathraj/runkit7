@@ -141,6 +141,43 @@ void php_runkit_update_children_methods_foreach(RUNKIT_53_TSRMLS_ARG(HashTable *
 }
 /* }}} */
 
+
+/* {{{ php_runkit_inherit_magic */
+inline static void php_runkit_inherit_magic(zend_class_entry *ce, const zend_function *fe, const zend_function *orig_fe TSRMLS_DC) {
+	if (ce->parent->ce_flags & ZEND_ACC_USE_GUARDS) {
+	}
+	if ((ce)->__get == (orig_fe) && (ce)->parent->__get == (fe)) {
+		(ce)->__get        = (ce)->parent->__get;
+	} else if ((ce)->__set        == (orig_fe) && (ce)->parent->__set == (fe)) {
+		(ce)->__set        = (ce)->parent->__set;
+	} else if ((ce)->__unset      == (orig_fe) && (ce)->parent->__unset == (fe)) {
+		(ce)->__unset      = (ce)->parent->__unset;
+	} else if ((ce)->__isset      == (orig_fe) && (ce)->parent->__isset == (fe)) {
+		(ce)->__isset      = (ce)->parent->__isset;
+	} else if ((ce)->__call       == (orig_fe) && (ce)->parent->__call == (fe)) {
+		(ce)->__call       = (ce)->parent->__call;
+	} else if ((ce)->__callstatic == (orig_fe) && (ce)->parent->__callstatic == (fe)) {
+		(ce)->__callstatic = (ce)->parent->__callstatic;
+	} else if ((ce)->__tostring == (orig_fe) && (ce)->parent->__tostring == (fe)) {
+		(ce)->__tostring   = (ce)->parent->__tostring;
+	} else if ((ce)->clone        == (orig_fe) && (ce)->parent->clone == (fe)) {
+		(ce)->clone        = (ce)->parent->clone;
+	} else if ((ce)->destructor   == (orig_fe) && (ce)->parent->destructor == (fe)) {
+		(ce)->destructor   = (ce)->parent->destructor;
+	} else if ((ce)->constructor  == (orig_fe) && (ce)->parent->constructor == (fe)) {
+		(ce)->constructor  = (ce)->parent->constructor;
+	} else if ((ce)->__debugInfo  == (orig_fe) && (ce)->parent->__debugInfo == (fe)) {
+		(ce)->__debugInfo  = (ce)->parent->__debugInfo;
+	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) &&
+		   (ce)->serialize_func == (orig_fe) && (ce)->parent->serialize_func == (fe)) {
+		(ce)->serialize_func = (ce)->parent->serialize_func;
+	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) &&
+		   (ce)->unserialize_func == (orig_fe) && (ce)->parent->unserialize_func == (fe)) {
+		(ce)->unserialize_func = (ce)->parent->unserialize_func;
+	}
+}
+/* }}} */
+
 /* {{{ php_runkit_update_children_methods
 	Scan the class_table for children of the class just updated */
 void php_runkit_update_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *ce), zend_class_entry *ancestor_class, zend_class_entry *parent_class, zend_function *fe, zend_string *fname_lower, zend_function *orig_fe) {
@@ -180,7 +217,7 @@ void php_runkit_update_children_methods(RUNKIT_53_TSRMLS_ARG(zend_class_entry *c
 		return;
 	}
 	PHP_RUNKIT_FUNCTION_ADD_REF(fe);
-	PHP_RUNKIT_INHERIT_MAGIC(ce, fe, orig_fe TSRMLS_CC);
+	php_runkit_inherit_magic(ce, fe, orig_fe TSRMLS_CC);
 
 	/* Process children of this child */
 	php_runkit_update_children_methods_foreach(RUNKIT_53_TSRMLS_PARAM(EG(class_table)),

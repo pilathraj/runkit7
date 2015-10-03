@@ -428,93 +428,10 @@ struct _php_runkit_sandbox_object {
 		zend_string_release(constname); \
 	}
 
-inline static void PHP_RUNKIT_ADD_MAGIC_METHOD(zend_class_entry *ce, zend_string* lcmname, zend_function *fe, const zend_function *orig_fe TSRMLS_DC) {
-	if (zend_string_equals_literal(lcmname, ZEND_CLONE_FUNC_NAME)) {
-		(ce)->clone = (fe); (fe)->common.fn_flags |= ZEND_ACC_CLONE;
-	} else if (zend_string_equals_literal(lcmname, ZEND_CONSTRUCTOR_FUNC_NAME)) {
-		if (!(ce)->constructor || (ce)->constructor == (orig_fe)) {
-			(ce)->constructor = (fe); (fe)->common.fn_flags |= ZEND_ACC_CTOR;
-		}
-	} else if (zend_string_equals_literal(lcmname, ZEND_DESTRUCTOR_FUNC_NAME)) {
-		(ce)->destructor = (fe); (fe)->common.fn_flags |= ZEND_ACC_DTOR;
-	} else if (zend_string_equals_literal(lcmname, ZEND_GET_FUNC_NAME)) {
-		(ce)->__get = (fe);
-	} else if (zend_string_equals_literal(lcmname, ZEND_SET_FUNC_NAME)) {
-		(ce)->__set = (fe);
-	} else if (zend_string_equals_literal(lcmname, ZEND_CALL_FUNC_NAME)) {
-		(ce)->__call = (fe);
-	} else if (zend_string_equals_literal(lcmname, ZEND_UNSET_FUNC_NAME)) {
-		(ce)->__unset = (fe);
-	} else if (zend_string_equals_literal(lcmname, ZEND_ISSET_FUNC_NAME)) {
-		(ce)->__isset = (fe);
-	} else if (zend_string_equals_literal(lcmname, ZEND_CALLSTATIC_FUNC_NAME)) {
-		(ce)->__callstatic = (fe);
-	} else if (zend_string_equals_literal(lcmname, ZEND_TOSTRING_FUNC_NAME)) {
-		(ce)->__tostring = (fe);
-	} else if (zend_string_equals_literal(lcmname, ZEND_DEBUGINFO_FUNC_NAME)) {
-		(ce)->__debugInfo = (fe);
-	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) && zend_string_equals_literal(lcmname, "serialize")) {
-		(ce)->serialize_func = (fe);
-	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) && zend_string_equals_literal(lcmname, "unserialize")) {
-		(ce)->unserialize_func = (fe);
-	} else if (zend_string_equals_ci(lcmname, (ce)->name)) {
-		// TODO: Re-examine the changes to the constructor code for any bugs.
-		if (!(ce)->constructor || (ce)->constructor == (orig_fe)) {
-			(ce)->constructor = (fe);
-			(fe)->common.fn_flags |= ZEND_ACC_CTOR;
-		}
-	}
-}
 
-inline static void PHP_RUNKIT_DEL_MAGIC_METHOD(zend_class_entry *ce, const zend_function *fe TSRMLS_DC) {
-	if      ((ce)->constructor == (fe))       (ce)->constructor      = NULL;
-	else if ((ce)->destructor == (fe))        (ce)->destructor       = NULL;
-	else if ((ce)->__get == (fe))             (ce)->__get            = NULL;
-	else if ((ce)->__set == (fe))             (ce)->__set            = NULL;
-	else if ((ce)->__unset == (fe))           (ce)->__unset          = NULL;
-	else if ((ce)->__isset == (fe))           (ce)->__isset          = NULL;
-	else if ((ce)->__call == (fe))            (ce)->__call           = NULL;
-	else if ((ce)->__callstatic == (fe))      (ce)->__callstatic     = NULL;
-	else if ((ce)->__tostring == (fe))        (ce)->__tostring       = NULL;
-	else if ((ce)->__debugInfo == (fe))       (ce)->__debugInfo      = NULL;
-	else if ((ce)->clone == (fe))             (ce)->clone            = NULL;
-	else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) && (ce)->serialize_func == (fe))
-		(ce)->serialize_func   = NULL;
-	else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) && (ce)->unserialize_func == (fe))
-		(ce)->unserialize_func = NULL;
-}
+void PHP_RUNKIT_ADD_MAGIC_METHOD(zend_class_entry *ce, zend_string* lcmname, zend_function *fe, const zend_function *orig_fe TSRMLS_DC);
 
-inline static void PHP_RUNKIT_INHERIT_MAGIC(zend_class_entry *ce, const zend_function *fe, const zend_function *orig_fe TSRMLS_DC) {
-	if ((ce)->__get == (orig_fe) && (ce)->parent->__get == (fe)) {
-		(ce)->__get        = (ce)->parent->__get;
-	} else if ((ce)->__set        == (orig_fe) && (ce)->parent->__set == (fe)) {
-		(ce)->__set        = (ce)->parent->__set;
-	} else if ((ce)->__unset      == (orig_fe) && (ce)->parent->__unset == (fe)) {
-		(ce)->__unset      = (ce)->parent->__unset;
-	} else if ((ce)->__isset      == (orig_fe) && (ce)->parent->__isset == (fe)) {
-		(ce)->__isset      = (ce)->parent->__isset;
-	} else if ((ce)->__call       == (orig_fe) && (ce)->parent->__call == (fe)) {
-		(ce)->__call       = (ce)->parent->__call;
-	} else if ((ce)->__callstatic == (orig_fe) && (ce)->parent->__callstatic == (fe)) {
-		(ce)->__callstatic = (ce)->parent->__callstatic;
-	} else if ((ce)->__tostring == (orig_fe) && (ce)->parent->__tostring == (fe)) {
-		(ce)->__tostring   = (ce)->parent->__tostring;
-	} else if ((ce)->clone        == (orig_fe) && (ce)->parent->clone == (fe)) {
-		(ce)->clone        = (ce)->parent->clone;
-	} else if ((ce)->destructor   == (orig_fe) && (ce)->parent->destructor == (fe)) {
-		(ce)->destructor   = (ce)->parent->destructor;
-	} else if ((ce)->constructor  == (orig_fe) && (ce)->parent->constructor == (fe)) {
-		(ce)->constructor  = (ce)->parent->constructor;
-	} else if ((ce)->__debugInfo  == (orig_fe) && (ce)->parent->__debugInfo == (fe)) {
-		(ce)->__debugInfo  = (ce)->parent->__debugInfo;
-	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) &&
-		   (ce)->serialize_func == (orig_fe) && (ce)->parent->serialize_func == (fe)) {
-		(ce)->serialize_func = (ce)->parent->serialize_func;
-	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) &&
-		   (ce)->unserialize_func == (orig_fe) && (ce)->parent->unserialize_func == (fe)) {
-		(ce)->unserialize_func = (ce)->parent->unserialize_func;
-	}
-}
+void PHP_RUNKIT_DEL_MAGIC_METHOD(zend_class_entry *ce, const zend_function *fe TSRMLS_DC);
 
 /* {{{ php_runkit_parse_doc_comment_arg */
 inline static zend_string* php_runkit_parse_doc_comment_arg(int argc, zval *args, int arg_pos) {
