@@ -215,9 +215,6 @@ static inline void *runkit_zend_hash_add_or_update_ptr(HashTable *ht, zend_strin
 #define IS_CONSTANT_AST IS_CONSTANT_ARRAY
 #endif
 
-#define PHP_RUNKIT_CONSTANT_INDEX(a) a
-
-
 /* runkit_functions.c */
 #define RUNKIT_TEMP_FUNCNAME  "__runkit_temporary_function__"
 int php_runkit_check_call_stack(zend_op_array *op_array TSRMLS_DC);

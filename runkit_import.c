@@ -17,6 +17,8 @@
   +----------------------------------------------------------------------+
 */
 
+/* TODO specify and fix the way this deals with private, protected, and public consts. */
+
 /* $Id$ */
 
 #include "php_runkit.h"
@@ -288,11 +290,9 @@ static int php_runkit_import_class_props(zend_class_entry *dce, zend_class_entry
 		}
 
 		// TODO: Fix constant check
-		if (
-			Z_TYPE_P(p) == IS_CONSTANT_AST
-			|| Z_TYPE_P(p) == IS_CONSTANT
-		) {
-			zval_update_constant_ex(p, 1, dce TSRMLS_CC);
+		if (Z_CONSTANT_P(p)) {
+			// TODO check return code?
+			zval_update_constant_ex(p, dce TSRMLS_CC);
 		}
 
 		php_runkit_zval_resolve_class_constant(p, dce TSRMLS_CC);

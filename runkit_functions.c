@@ -189,10 +189,15 @@ void php_runkit_function_copy_ctor(zend_function *fe, zend_string* newname TSRML
 		}
 
 		if (fe->op_array.static_variables) {
+			// Similar to zend_compile.c's zend_create_closure copying static variables, zend_compile.c's do_bind_function
+#if PHP_VERSION_ID >= 70100
+			fe->op_array.static_variables = zend_array_dup(fe->op_array.static_variables);
+#else
 			HashTable *static_variables = fe->op_array.static_variables;
 			ALLOC_HASHTABLE(fe->op_array.static_variables);
 			zend_hash_init(fe->op_array.static_variables, zend_hash_num_elements(static_variables), NULL, ZVAL_PTR_DTOR, 0);
 			zend_hash_apply_with_arguments(RUNKIT_53_TSRMLS_PARAM(static_variables), zval_copy_static_var, 1, fe->op_array.static_variables);
+#endif
 		}
 
 		if (fe->op_array.run_time_cache) {
@@ -308,7 +313,9 @@ void php_runkit_function_copy_ctor(zend_function *fe, zend_string* newname TSRML
 			zend_string_addref(fe->op_array.doc_comment);
 		}
 		fe->op_array.try_catch_array = (zend_try_catch_element*)estrndup((char*)fe->op_array.try_catch_array, sizeof(zend_try_catch_element) * fe->op_array.last_try_catch);
-		fe->op_array.brk_cont_array = (zend_brk_cont_element*)estrndup((char*)fe->op_array.brk_cont_array, sizeof(zend_brk_cont_element) * fe->op_array.last_brk_cont);
+#if PHP_MAJOR_VERSION == 7 && PHP_MINOR_VERSION == 0
+	fe->op_array.brk_cont_array = (zend_brk_cont_element*)estrndup((char*)fe->op_array.brk_cont_array, sizeof(zend_brk_cont_element) * fe->op_array.last_brk_cont);
+#endif
 
 		if (fe->op_array.arg_info) {
 			zend_arg_info *tmpArginfo;
@@ -959,8 +966,7 @@ PHP_FUNCTION(runkit_function_copy)
 	}
 
 	zend_string_release(dfunc_lower);
-	// Ugh... zend_mm_heap corrupted when cleaning up the function_table. WHY?
-	//zend_string_release(sfunc_lower);
+	zend_string_release(sfunc_lower);
 
 	RETURN_TRUE;
 
@@ -968,18 +974,25 @@ PHP_FUNCTION(runkit_function_copy)
 /* }}} */
 #endif /* PHP_RUNKIT_MANIPULATION */
 
+#if PHP_VERSION_ID >= 70100
+# define RETURN_VALUE_USED(opline) ((opline)->result_type != IS_UNUSED)
+#else
+# define RETURN_VALUE_USED(opline) !((opline)->result_type & EXT_TYPE_UNUSED)
+#endif
+
 /* {{{ proto bool runkit_return_value_used(void)
 Does the calling function do anything with our return value? */
 PHP_FUNCTION(runkit_return_value_used)
 {
-	zend_execute_data *ptr = EG(current_execute_data)->prev_execute_data;
+    // This is still broken. Look into what vld does.
+	zend_execute_data *ptr = EX(prev_execute_data);
 
 	if (!ptr) {
 		/* main() */
 		RETURN_FALSE;
 	}
 
-	RETURN_BOOL(!(ptr->opline->result_type & EXT_TYPE_UNUSED));
+	RETURN_BOOL(RETURN_VALUE_USED(ptr->opline));
 }
 /* }}} */
 

@@ -21,9 +21,14 @@
 
 /* {{{ php_runkit_zval_resolve_class_constant */
 inline static void php_runkit_zval_resolve_class_constant(zval *p, zend_class_entry *ce TSRMLS_DC) {
-	if (Z_TYPE_P(p) == IS_CONSTANT_AST || Z_TYPE_P(p) == IS_CONSTANT) {
-    // TODO: What does this do?
-		zval_update_constant_ex(p, PHP_RUNKIT_CONSTANT_INDEX(1), ce TSRMLS_CC);
+	if (Z_CONSTANT_P(p)) {
+#if PHP_VERSION_ID >= 70100
+        // TODO: What does this do?
+		// TODO: Make a copy if (Z_TYPE_FLAGS_P(p) & IS_TYPE_IMMUTABLE) != 0, test this out?
+		zval_update_constant_ex(p, ce TSRMLS_CC);
+#else
+		zval_update_constant_ex(p, 1, ce TSRMLS_CC);
+#endif
 	}
 }
 /* }}} */
