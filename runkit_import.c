@@ -290,12 +290,8 @@ static int php_runkit_import_class_props(zend_class_entry *dce, zend_class_entry
 		}
 
 		// TODO: Fix constant check
-		if (Z_CONSTANT_P(p)) {
-			// TODO check return code?
-			zval_update_constant_ex(p, dce TSRMLS_CC);
-		}
-
 		php_runkit_zval_resolve_class_constant(p, dce TSRMLS_CC);
+
 		php_runkit_def_prop_add_int(dce, key, p,
 									property_info_ptr->flags, property_info_ptr->doc_comment,
 									dce, override, remove_from_objects TSRMLS_CC);
