@@ -5,7 +5,7 @@ For all those things you.... probably shouldn't have been doing anyway.... but s
 __Now with partial support for PHP7.0, 7.1, and 7.2!__ (function/method manipulation is recommended only for unit testing).
 
 [![Build Status](https://secure.travis-ci.org/runkit7/runkit7.png?branch=master)](http://travis-ci.org/runkit7/runkit7)
-[![Build Status (Windows)](https://ci.appveyor.com/api/projects/status/c9vnlao3hqhmo9ny?svg=true)](https://ci.appveyor.com/project/TysonAndre/runkit7/branch/master)
+[![Build status](https://ci.appveyor.com/api/projects/status/c9vnlao3hqhmo9ny?svg=true)](https://ci.appveyor.com/project/pilathraj/runkit7)
 
 [Building and installing runkit in unix](#building-and-installing-runkit7-in-unix)
 
