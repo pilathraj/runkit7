@@ -71,6 +71,7 @@ build_script:
                 cd c:\projects\runkit7
                 
                 $env:PATH = 'c:\build-cache\' + $dname1 + ';' + $env:PATH              
+                $env:PATH = 'c:\projects\runkit7' + ';' + $env:PATH              
                 $here = (Get-Item -Path "." -Verbose).FullName
                 $runner = 'c:\build-cache\php-sdk-' + $env:BIN_SDK_VER + '\phpsdk' + '-' + $env:VC + '-' + $env:ARCH + '.bat'
                 $task = $here + '\appveyor\task.bat'
