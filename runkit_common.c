@@ -31,12 +31,12 @@ void ensure_all_objects_of_class_have_magic_methods(zend_class_entry *ce) {
 	ce->ce_flags |= ZEND_ACC_USE_GUARDS;
 	// Make sure that existing classes will be able to call magic methods
   // TODO: Add test of adding magic methods working on objects initialized before the call to runkit.
-	/*PHP_RUNKIT_ITERATE_THROUGH_OBJECTS_STORE_BEGIN(i)
+	PHP_RUNKIT_ITERATE_THROUGH_OBJECTS_STORE_BEGIN(i)
 	if (object->ce == ce) {
 	  GC_FLAGS(object) |= IS_OBJ_USE_GUARDS;  // see zend_object_std_init
 	  break;
 	}
-	PHP_RUNKIT_ITERATE_THROUGH_OBJECTS_STORE_END*/
+	PHP_RUNKIT_ITERATE_THROUGH_OBJECTS_STORE_END
 }
 /* }}} */
 
