@@ -10,21 +10,38 @@ ARG_ENABLE("runkit-spl_object_id", "Enable spl_object_id alias of runkit_object_
 // ARG_ENABLE("runkit-sandbox", "Disable Runkit_Sandbox (Requires ZTS)", "yes");
 
 if (PHP_RUNKIT != "no") {
-	AC_DEFINE("PHP_RUNKIT_FEATURE_MODIFY", PHP_RUNKIT_MODIFY == "yes", "Runkit Manipulation");
-	AC_DEFINE("PHP_RUNKIT_FEATURE_SUPER", PHP_RUNKIT_SUPER == "yes", "Runkit Superglobals");
-	AC_DEFINE("PHP_RUNKIT_SPL_OBJECT_ID", PHP_RUNKIT_SPL_OBJECT_ID == "yes", "Runkit spl_object_id substitute");
-	// AC_DEFINE("PHP_RUNKIT_FEATURE_SANDBOX", PHP_RUNKIT_SANDBOX == "yes", "Runkit Sandbox");
+    // TODO: Why isn't HAVE_CONFIG_H being set all of the time?
+    if (PHP_RUNKIT_MODIFY != "no") {
+        // Hackish way to enable these CFLAGS to include the necessary flags
+        ADD_FLAG('CFLAGS_RUNKIT', ' /D PHP_RUNKIT_FEATURE_MODIFY');
+        AC_DEFINE("PHP_RUNKIT_FEATURE_MODIFY", 1, "Runkit Manipulation");
+    }
+    if (PHP_RUNKIT_SUPER != "no") {
+        ADD_FLAG('CFLAGS_RUNKIT', ' /D PHP_RUNKIT_FEATURE_SUPER');
+        AC_DEFINE("PHP_RUNKIT_FEATURE_SUPER", 1, "Runkit Superglobals");
+    }
+    if (PHP_RUNKIT_SPL_OBJECT_ID != "no") {
+        ADD_FLAG('CFLAGS_RUNKIT', ' /D PHP_RUNKIT_SPL_OBJECT_ID');
+        AC_DEFINE("PHP_RUNKIT_SPL_OBJECT_ID", 1, "Runkit spl_object_id substitute");
+    }
 
-	EXTENSION("runkit", "runkit.c " +
-			"runkit_common.c " +
-			"runkit_functions.c " +
-			"runkit_methods.c " +
-			"runkit_import.c " +
-			"runkit_classes.c " +
-			"runkit_props.c " +
-			"runkit_constants.c " +
-			"runkit_object_id.c " +
-			// "runkit_sandbox.c " +
-			// "runkit_sandbox_parent.c " +
-			"runkit_zend_execute_API.c ");
+
+    // AC_DEFINE("PHP_RUNKIT_FEATURE_SANDBOX", PHP_RUNKIT_SANDBOX != "no", "Runkit Sandbox");
+
+    AC_DEFINE('HAVE_RUNKIT', 1);
+
+    PHP_INSTALL_HEADERS('ext/runkit', 'php_runkit.h php_runkit_hash.h php_runkit_sandbox.h php_runkit_zend_execute_API.h php_runkit_zval.h runkit.h');
+
+    EXTENSION("runkit", "runkit.c " +
+                        "runkit_common.c " +
+                        "runkit_functions.c " +
+                        "runkit_methods.c " +
+                        "runkit_import.c " +
+                        "runkit_classes.c " +
+                        "runkit_props.c " +
+                        "runkit_constants.c " +
+                        "runkit_object_id.c " +
+                        // "runkit_sandbox.c " +
+                        // "runkit_sandbox_parent.c " +
+                        "runkit_zend_execute_API.c ");
 }

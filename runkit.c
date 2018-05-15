@@ -3,7 +3,7 @@
   | PHP Version 7                                                        |
   +----------------------------------------------------------------------+
   | Copyright (c) 1997-2006 The PHP Group, (c) 2008-2015 Dmitry Zenovich |
-  | "runkit7" patches (c) 2015-2017 Tyson Andre                          |
+  | "runkit7" patches (c) 2015-2018 Tyson Andre                          |
   +----------------------------------------------------------------------+
   | This source file is subject to the new BSD license,                  |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -21,7 +21,7 @@
 
 /* $Id$ */
 
-#include "php_runkit.h"
+#include "runkit.h"
 #include "SAPI.h"
 
 ZEND_DECLARE_MODULE_GLOBALS(runkit)
@@ -53,7 +53,7 @@ PHP_FUNCTION(runkit_zval_inspect)
 	char *addr;
 	int addr_len;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z", &value) == FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "z", &value) == FAILURE) {
 		return;
 	}
 
@@ -295,10 +295,10 @@ ZEND_GET_MODULE(runkit)
 
 #ifdef PHP_RUNKIT_MANIPULATION
 ZEND_FUNCTION(_php_runkit_removed_function) {
-	php_error_docref(NULL TSRMLS_CC, E_ERROR, "A function removed by runkit was somehow invoked");
+	php_error_docref(NULL, E_ERROR, "A function removed by runkit was somehow invoked");
 }
 ZEND_FUNCTION(_php_runkit_removed_method) {
-	php_error_docref(NULL TSRMLS_CC, E_ERROR, "A method removed by runkit was somehow invoked");
+	php_error_docref(NULL, E_ERROR, "A method removed by runkit was somehow invoked");
 }
 
 static inline void _php_runkit_init_stub_function(const char *name, void (*handler)(INTERNAL_FUNCTION_PARAMETERS), zend_function **result) {
@@ -316,7 +316,7 @@ static inline void _php_runkit_init_stub_function(const char *name, void (*handl
 #endif
 
 #if defined(PHP_RUNKIT_SANDBOX) || defined(PHP_RUNKIT_MANIPULATION)
-static void php_runkit_globals_ctor(void *pDest TSRMLS_DC)
+static void php_runkit_globals_ctor(void *pDest)
 {
 	zend_runkit_globals *runkit_global = (zend_runkit_globals *) pDest;
 #ifdef PHP_RUNKIT_SANDBOX
@@ -339,9 +339,9 @@ static void php_runkit_globals_ctor(void *pDest TSRMLS_DC)
 
 #define php_runkit_feature_constant(feature, enabled) \
 		_php_runkit_feature_constant("RUNKIT_FEATURE_" #feature, sizeof("RUNKIT_FEATURE_" #feature), (enabled), \
-									CONST_CS | CONST_PERSISTENT, module_number TSRMLS_CC)
+									CONST_CS | CONST_PERSISTENT, module_number)
 static void _php_runkit_feature_constant(const char *name, size_t name_len, zend_bool enabled,
-									int flags, int module_number TSRMLS_DC)
+									int flags, int module_number)
 {
 	zend_constant c;
 
@@ -349,7 +349,7 @@ static void _php_runkit_feature_constant(const char *name, size_t name_len, zend
 	c.flags = flags;
 	c.name = zend_string_init(name, name_len - 1, 1);  // TODO: can this be persistent?
 	c.module_number = module_number;
-	zend_register_constant(&c TSRMLS_CC);
+	zend_register_constant(&c);
 }
 
 
@@ -446,7 +446,7 @@ PHP_MSHUTDOWN_FUNCTION(runkit)
 #ifdef PHP_RUNKIT_SUPERGLOBALS
 /* {{{ php_runkit_register_auto_global
 	Register an autoglobal only if it's not already registered */
-static void php_runkit_register_auto_global(char *s, int len TSRMLS_DC)
+static void php_runkit_register_auto_global(char *s, int len)
 {
 	zend_auto_global *auto_global;
 	zend_string* globalName = zend_string_init(s, len, 1);
@@ -460,12 +460,12 @@ static void php_runkit_register_auto_global(char *s, int len TSRMLS_DC)
 
 	if (zend_register_auto_global(globalName,
 			0,
-		    NULL TSRMLS_CC) == SUCCESS) {
+		    NULL) == SUCCESS) {
 		// FIXME: This is broken.
 
 		// TODO: How do I get an auto global out of a zend_hash????
 		if ((auto_global = zend_hash_find_ptr(CG(auto_globals), globalName)) == NULL) {
-			php_error_docref(NULL TSRMLS_CC, E_ERROR, "Cannot locate the newly created autoglobal");
+			php_error_docref(NULL, E_ERROR, "Cannot locate the newly created autoglobal");
 			return;
 		}
 		auto_global->armed = 0;
@@ -500,7 +500,7 @@ static void php_runkit_rinit_register_superglobals(const char *ini_s) {
 	while(p) {
 		if (p - s) {
 			*p = '\0';
-			php_runkit_register_auto_global(s, p - s TSRMLS_CC);
+			php_runkit_register_auto_global(s, p - s);
 		}
 		s = ++p;
 		p = strchr(p, ',');
@@ -508,7 +508,7 @@ static void php_runkit_rinit_register_superglobals(const char *ini_s) {
 
 	len = strlen(s);
 	if (len) {
-		php_runkit_register_auto_global(s, len TSRMLS_CC);
+		php_runkit_register_auto_global(s, len);
 	}
 	efree(dup);
 }
@@ -540,7 +540,7 @@ PHP_RINIT_FUNCTION(runkit)
 
 #ifdef PHP_RUNKIT_SUPERGLOBALS
 /* {{{ php_runkit_superglobal_dtor */
-static int php_runkit_superglobal_dtor(zval *zv TSRMLS_DC)
+static int php_runkit_superglobal_dtor(zval *zv)
 {
 	ZEND_ASSERT(Z_TYPE_P(zv) == IS_STRING);
 	zend_hash_del(CG(auto_globals), Z_STR_P(zv));
@@ -560,7 +560,7 @@ PHP_RSHUTDOWN_FUNCTION(runkit)
 
 #ifdef PHP_RUNKIT_SUPERGLOBALS
 	if (RUNKIT_G(superglobals)) {
-		zend_hash_apply(RUNKIT_G(superglobals), php_runkit_superglobal_dtor TSRMLS_CC);
+		zend_hash_apply(RUNKIT_G(superglobals), php_runkit_superglobal_dtor);
 
 		zend_hash_destroy(RUNKIT_G(superglobals));
 		FREE_HASHTABLE(RUNKIT_G(superglobals));
@@ -570,7 +570,7 @@ PHP_RSHUTDOWN_FUNCTION(runkit)
 #ifdef PHP_RUNKIT_MANIPULATION
 	if (RUNKIT_G(misplaced_internal_functions)) {
 		/* Just wipe out rename-to targets before restoring originals */
-		zend_hash_apply(RUNKIT_G(misplaced_internal_functions), php_runkit_destroy_misplaced_functions TSRMLS_CC);
+		zend_hash_apply(RUNKIT_G(misplaced_internal_functions), php_runkit_destroy_misplaced_functions);
 		zend_hash_destroy(RUNKIT_G(misplaced_internal_functions));
 		FREE_HASHTABLE(RUNKIT_G(misplaced_internal_functions));
 		RUNKIT_G(misplaced_internal_functions) = NULL;
@@ -585,10 +585,10 @@ PHP_RSHUTDOWN_FUNCTION(runkit)
 		// TODO: The pointer to `f` is correct, but the data inside of `f` is corrupted at the time request shutdown is reached
 		zend_function *f;
 		zend_string *key;
-		// php_error_docref(NULL TSRMLS_CC, E_WARNING, "In RSHUTDOWN: restoring replaced internal functions: count=%d sapi_module=%s", (int) zend_array_count(RUNKIT_G(replaced_internal_functions)), sapi_module.name);
+		// php_error_docref(NULL, E_WARNING, "In RSHUTDOWN: restoring replaced internal functions: count=%d sapi_module=%s", (int) zend_array_count(RUNKIT_G(replaced_internal_functions)), sapi_module.name);
 		ZEND_HASH_FOREACH_STR_KEY_PTR(RUNKIT_G(replaced_internal_functions), key, f) {
 			if (key != NULL) {
-				// php_error_docref(NULL TSRMLS_CC, E_WARNING, "In RSHUTDOWN: restoring '%s' addr=%llx", ZSTR_VAL(key), (long long)(uintptr_t)f);
+				// php_error_docref(NULL, E_WARNING, "In RSHUTDOWN: restoring '%s' addr=%llx", ZSTR_VAL(key), (long long)(uintptr_t)f);
 				// NOTE: On modules shutdown, modules will call zend_function_dtor on the modules they declared... so it's best if this is a clone of the internal function?
 				ZEND_ASSERT(f->type == ZEND_INTERNAL_FUNCTION || f->type == ZEND_USER_FUNCTION);
 				php_runkit_restore_internal_function(key, f);

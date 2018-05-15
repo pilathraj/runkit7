@@ -3,7 +3,7 @@
   | PHP Version 7                                                        |
   +----------------------------------------------------------------------+
   | (c) 2008-2015 Dmitry Zenovich                                        |
-  | "runkit7" patches (c) 2015-2017 Tyson Andre                          |
+  | "runkit7" patches (c) 2015-2018 Tyson Andre                          |
   +----------------------------------------------------------------------+
   | This source file is subject to the new BSD license,                  |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -24,7 +24,7 @@
 // FIXME reintroduce and fix compilation errors
 #if 0
 /* {{{ php_runkit_sandbox_has_property_int */
-inline static int php_runkit_sandbox_has_property_int(int has_set_exists, zval *member TSRMLS_DC) {
+inline static int php_runkit_sandbox_has_property_int(int has_set_exists, zval *member) {
 	zval **tmpzval;
 	int result = 0;
 
@@ -68,29 +68,29 @@ inline static int php_runkit_sandbox_has_property_int(int has_set_exists, zval *
 /* }}} */
 
 /* {{{ php_runkit_sandbox_include_or_eval_int */
-inline static zend_op_array *php_runkit_sandbox_include_or_eval_int(zval *return_value, zval *zcode, int type, int once, int *already_included TSRMLS_DC) {
+inline static zend_op_array *php_runkit_sandbox_include_or_eval_int(zval *return_value, zval *zcode, int type, int once, int *already_included) {
 	zend_op_array *op_array = NULL;
 
 	if (type == ZEND_EVAL) {
 		/* eval() */
-		char *eval_desc = zend_make_compiled_string_description("Runkit_Sandbox Eval Code" TSRMLS_CC);
-		op_array = compile_string(zcode, eval_desc TSRMLS_CC);
+		char *eval_desc = zend_make_compiled_string_description("Runkit_Sandbox Eval Code");
+		op_array = compile_string(zcode, eval_desc);
 		efree(eval_desc);
 	} else if (!once) {
 		/* include() & requre() */
-		op_array = compile_filename(type, zcode TSRMLS_CC);
+		op_array = compile_filename(type, zcode);
 	} else {
 		/* include_once() & require_once() */
 		int dummy = 1;
 		zend_file_handle file_handle;
 
-		if (SUCCESS == zend_stream_open(Z_STRVAL_P(zcode), &file_handle TSRMLS_CC)) {
+		if (SUCCESS == zend_stream_open(Z_STRVAL_P(zcode), &file_handle)) {
 			if (!file_handle.opened_path) {
 				file_handle.opened_path = estrndup(Z_STRVAL_P(zcode), Z_STRLEN_P(zcode));
 			}
 			if (zend_hash_add(&EG(included_files), file_handle.opened_path, strlen(file_handle.opened_path)+1, (void*)&dummy, sizeof(int), NULL)==SUCCESS) {
-				op_array = zend_compile_file(&file_handle, type TSRMLS_CC);
-				zend_destroy_file_handle(&file_handle TSRMLS_CC);
+				op_array = zend_compile_file(&file_handle, type);
+				zend_destroy_file_handle(&file_handle);
 			} else {
 				RUNKIT_FILE_HANDLE_DTOR(&file_handle);
 				RETVAL_TRUE;
@@ -103,7 +103,7 @@ inline static zend_op_array *php_runkit_sandbox_include_or_eval_int(zval *return
 /* }}} */
 
 /* {{{ php_runkit_sandbox_call_int */
-inline static void php_runkit_sandbox_call_int(zval *func_name, char **pname, zval **pretval, zval *args, zval *return_value, void *prior_context TSRMLS_DC) {
+inline static void php_runkit_sandbox_call_int(zval *func_name, char **pname, zval **pretval, zval *args, zval *return_value, void *prior_context) {
 	HashPosition pos;
 	int i;
 	zval **tmpzval;
@@ -122,7 +122,7 @@ inline static void php_runkit_sandbox_call_int(zval *func_name, char **pname, zv
 			zend_object *bucket;
 			bucket = php_runkit_zend_object_store_get_obj(*sandbox_args[i], prior_context);
 			closure = (zend_closure *) bucket->bucket.obj.object;
-			(*sandbox_args[i])->value.obj.handle = zend_objects_store_put(closure, NULL, NULL, bucket->bucket.obj.clone TSRMLS_CC);
+			(*sandbox_args[i])->value.obj.handle = zend_objects_store_put(closure, NULL, NULL, bucket->bucket.obj.clone);
 		} else
 			PHP_SANDBOX_CROSS_SCOPE_ZVAL_COPY_CTOR(*sandbox_args[i]);
 	}
@@ -134,14 +134,14 @@ inline static void php_runkit_sandbox_call_int(zval *func_name, char **pname, zv
 	 * The user will get a confusing error message about (null)() being disabled for security reasons on line 0
 	 * This will be fixable with a properly set EG(function_state_ptr)....just not yet
 	 */
-	if (call_user_function_ex(EG(function_table), NULL, func_name, pretval, argc, sandbox_args, 0, NULL TSRMLS_CC) == SUCCESS) {
+	if (call_user_function_ex(EG(function_table), NULL, func_name, pretval, argc, sandbox_args, 0, NULL) == SUCCESS) {
 		if (*pretval) {
 			*return_value = **pretval;
 		} else {
 			RETVAL_TRUE;
 		}
 	} else {
-		php_error_docref1(NULL TSRMLS_CC, *pname, E_WARNING, "Unable to call function");
+		php_error_docref1(NULL, *pname, E_WARNING, "Unable to call function");
 		RETVAL_FALSE;
 	}
 	if (*pname) {
@@ -150,9 +150,9 @@ inline static void php_runkit_sandbox_call_int(zval *func_name, char **pname, zv
 	}
 
 	for(i = 0; i < argc; i++) {
-		if (Z_TYPE_P(*sandbox_args[i]) == IS_OBJECT && zend_get_class_entry(*sandbox_args[i] TSRMLS_CC) == zend_ce_closure) {
-			zend_object_store_bucket *bucket = php_runkit_zend_object_store_get_obj(*sandbox_args[i] TSRMLS_CC);
-			zend_objects_store_del_ref(*sandbox_args[i] TSRMLS_CC);
+		if (Z_TYPE_P(*sandbox_args[i]) == IS_OBJECT && zend_get_class_entry(*sandbox_args[i]) == zend_ce_closure) {
+			zend_object_store_bucket *bucket = php_runkit_zend_object_store_get_obj(*sandbox_args[i]);
+			zend_objects_store_del_ref(*sandbox_args[i]);
 			zval_ptr_dtor(sandbox_args[i]);
 			bucket->bucket.obj.object = NULL;
 		}
@@ -164,7 +164,7 @@ inline static void php_runkit_sandbox_call_int(zval *func_name, char **pname, zv
 /* }}} */
 
 /* {{{ php_runkit_sandbox_return_property_value */
-inline static zval *php_runkit_sandbox_return_property_value(int prop_found, zval *retval TSRMLS_DC) {
+inline static zval *php_runkit_sandbox_return_property_value(int prop_found, zval *retval) {
 	if (prop_found) {
 		zval *return_value;
 

@@ -3,7 +3,7 @@
   | PHP Version 7                                                        |
   +----------------------------------------------------------------------+
   | Copyright (c) 1997-2006 The PHP Group, (c) 2008-2012 Dmitry Zenovich |
-  | "runkit7" patches (c) 2015-2017 Tyson Andre                          |
+  | "runkit7" patches (c) 2015-2018 Tyson Andre                          |
   +----------------------------------------------------------------------+
   | This source file is subject to the new BSD license,                  |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -19,7 +19,7 @@
   +----------------------------------------------------------------------+
 */
 
-#include "php_runkit.h"
+#include "runkit.h"
 
 /* {{{ */
 void ensure_all_objects_of_class_have_magic_methods(zend_class_entry *ce) {
@@ -41,7 +41,7 @@ void ensure_all_objects_of_class_have_magic_methods(zend_class_entry *ce) {
 /* }}} */
 
 /* {{{ PHP_RUNKIT_ADD_MAGIC_METHOD */
-void PHP_RUNKIT_ADD_MAGIC_METHOD(zend_class_entry *ce, zend_string* lcmname, zend_function *fe, const zend_function *orig_fe TSRMLS_DC) {
+void PHP_RUNKIT_ADD_MAGIC_METHOD(zend_class_entry *ce, zend_string* lcmname, zend_function *fe, const zend_function *orig_fe) {
 	if (zend_string_equals_literal(lcmname, ZEND_CLONE_FUNC_NAME)) {
 		(ce)->clone = (fe);
 #if PHP_VERSION_ID < 70200
@@ -73,9 +73,9 @@ void PHP_RUNKIT_ADD_MAGIC_METHOD(zend_class_entry *ce, zend_string* lcmname, zen
 		(ce)->__tostring = (fe);
 	} else if (zend_string_equals_literal(lcmname, ZEND_DEBUGINFO_FUNC_NAME)) {
 		(ce)->__debugInfo = (fe);
-	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) && zend_string_equals_literal(lcmname, "serialize")) {
+	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1) && zend_string_equals_literal(lcmname, "serialize")) {
 		(ce)->serialize_func = (fe);
-	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) && zend_string_equals_literal(lcmname, "unserialize")) {
+	} else if (instanceof_function_ex(ce, zend_ce_serializable, 1) && zend_string_equals_literal(lcmname, "unserialize")) {
 		(ce)->unserialize_func = (fe);
 	} else if (zend_string_equals_ci(lcmname, (ce)->name)) {
 		// TODO: Re-examine the changes to the constructor code for any bugs.
@@ -88,7 +88,7 @@ void PHP_RUNKIT_ADD_MAGIC_METHOD(zend_class_entry *ce, zend_string* lcmname, zen
 /** }}} */
 
 /* {{{ PHP_RUNKIT_DEL_MAGIC_METHOD */
-void PHP_RUNKIT_DEL_MAGIC_METHOD(zend_class_entry *ce, const zend_function *fe TSRMLS_DC) {
+void PHP_RUNKIT_DEL_MAGIC_METHOD(zend_class_entry *ce, const zend_function *fe) {
 	if      ((ce)->constructor == (fe))       (ce)->constructor      = NULL;
 	else if ((ce)->destructor == (fe))        (ce)->destructor       = NULL;
 	else if ((ce)->__get == (fe))             (ce)->__get            = NULL;
@@ -100,9 +100,9 @@ void PHP_RUNKIT_DEL_MAGIC_METHOD(zend_class_entry *ce, const zend_function *fe T
 	else if ((ce)->__tostring == (fe))        (ce)->__tostring       = NULL;
 	else if ((ce)->__debugInfo == (fe))       (ce)->__debugInfo      = NULL;
 	else if ((ce)->clone == (fe))             (ce)->clone            = NULL;
-	else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) && (ce)->serialize_func == (fe))
+	else if (instanceof_function_ex(ce, zend_ce_serializable, 1) && (ce)->serialize_func == (fe))
 		(ce)->serialize_func   = NULL;
-	else if (instanceof_function_ex(ce, zend_ce_serializable, 1 TSRMLS_CC) && (ce)->unserialize_func == (fe))
+	else if (instanceof_function_ex(ce, zend_ce_serializable, 1) && (ce)->unserialize_func == (fe))
 		(ce)->unserialize_func = NULL;
 }
 /* }}} */

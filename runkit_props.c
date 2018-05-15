@@ -3,7 +3,7 @@
   | PHP Version 7                                                        |
   +----------------------------------------------------------------------+
   | Copyright (c) 1997-2006 The PHP Group, (c) 2008-2015 Dmitry Zenovich |
-  | "runkit7" patches (c) 2015-2017 Tyson Andre                          |
+  | "runkit7" patches (c) 2015-2018 Tyson Andre                          |
   +----------------------------------------------------------------------+
   | This source file is subject to the new BSD license,                  |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -25,13 +25,13 @@ runkit_property_modify() may be added in the future (will change the value, but 
 
 /* $Id$ */
 
-#include "php_runkit.h"
+#include "runkit.h"
 #include "php_runkit_zval.h"
 
 #ifdef PHP_RUNKIT_MANIPULATION_PROPERTIES
 
 /* {{{ php_runkit_make_object_property_public */
-static inline void php_runkit_make_object_property_public(zend_string *propname, zend_object *object, int offset, zend_property_info *property_info_ptr TSRMLS_DC) {
+static inline void php_runkit_make_object_property_public(zend_string *propname, zend_object *object, int offset, zend_property_info *property_info_ptr) {
 	if ((property_info_ptr->flags & (ZEND_ACC_PRIVATE | ZEND_ACC_PROTECTED | ZEND_ACC_SHADOW))) {
 		zval *prop_val = NULL;
 		if (!object->properties) {
@@ -50,7 +50,7 @@ static inline void php_runkit_make_object_property_public(zend_string *propname,
 			}
 			// TODO: This is probably going to cause a segfault.
 			zend_hash_update(object->properties, propname, prop_val);
-			php_error_docref(NULL TSRMLS_CC, E_NOTICE, "Making %s::%s public to remove it "
+			php_error_docref(NULL, E_NOTICE, "Making %s::%s public to remove it "
 					 "from class without objects overriding", ZSTR_VAL(object->ce->name), ZSTR_VAL(propname));
 		}
 	}
@@ -68,7 +68,7 @@ static void php_runkit_remove_children_def_props(zend_class_entry *ce, zend_clas
 	}
 
 	php_runkit_def_prop_remove_int(ce, pname, class_we_originally_removing_from, was_static, remove_from_objects,
-	                               parent_property TSRMLS_CC);
+	                               parent_property);
 }
 /* }}} */
 
@@ -96,7 +96,7 @@ static void php_runkit_remove_overlapped_property_from_childs_foreach(HashTable*
 		php_runkit_remove_overlapped_property_from_childs(ce, parent_class, propname, offset, is_static, remove_from_objects, property_info_ptr);
 	} ZEND_HASH_FOREACH_END();
 	// FIXME what was the intent of the original code?
-	// php_runkit_def_prop_add_int(ce, propname, property_info_ptr, access_type, (zend_string*) NULL, definer_class, override, override_in_objects TSRMLS_CC);
+	// php_runkit_def_prop_add_int(ce, propname, property_info_ptr, access_type, (zend_string*) NULL, definer_class, override, override_in_objects);
 }
 /* }}} */
 
@@ -112,8 +112,8 @@ static void php_runkit_remove_overlapped_property_from_childs(zend_class_entry *
 		return;
 	}
 
-	php_runkit_remove_overlapped_property_from_childs_foreach(RUNKIT_53_TSRMLS_PARAM(EG(class_table)), ce, propname, offset, is_static, remove_from_objects, property_info_ptr);
-	// php_runkit_remove_property_from_reflection_objects(ce, propname TSRMLS_CC);
+	php_runkit_remove_overlapped_property_from_childs_foreach(EG(class_table), ce, propname, offset, is_static, remove_from_objects, property_info_ptr);
+	// php_runkit_remove_property_from_reflection_objects(ce, propname);
 
 	if (is_static) {
 		goto st_success;
@@ -122,7 +122,7 @@ static void php_runkit_remove_overlapped_property_from_childs(zend_class_entry *
 	PHP_RUNKIT_ITERATE_THROUGH_OBJECTS_STORE_BEGIN(i)
 		if (object->ce == ce) {
 			if (!remove_from_objects) {
-				php_runkit_make_object_property_public(propname, object, offset, property_info_ptr TSRMLS_CC);
+				php_runkit_make_object_property_public(propname, object, offset, property_info_ptr);
 			} else {
 				if (!Z_ISUNDEF(object->properties_table[offset])) {
 					if (!object->properties) {
@@ -146,7 +146,7 @@ st_success:
 	}
 	zend_hash_apply_with_argument(&ce->properties_info,
 								  php_runkit_remove_property_by_full_name,
-	                              property_info_ptr TSRMLS_CC);
+	                              property_info_ptr);
 	if ((p = zend_hash_find_ptr(&ce->properties_info, propname)) != NULL &&
 	    ZSTR_H(p->name) == ZSTR_H(property_info_ptr->name)) {
 		zend_hash_del(&ce->properties_info, propname);
@@ -157,7 +157,7 @@ st_success:
 /* {{{ php_runkit_def_prop_add_int */
 int php_runkit_def_prop_add_int(zend_class_entry *ce, zend_string* propname, zval *copyval, long visibility,
                                 zend_string* doc_comment, zend_class_entry *definer_class, int override,
-                                int override_in_objects TSRMLS_DC)
+                                int override_in_objects)
 {
 	uint32_t i;
 	int offset;
@@ -187,27 +187,27 @@ int php_runkit_def_prop_add_int(zend_class_entry *ce, zend_string* propname, zva
 	if ((prop_info_ptr = zend_hash_find_ptr(&ce->properties_info, propname)) != NULL) {
 		if (!override) {
 			zval_ptr_dtor(pcopyval);
-			php_error_docref(NULL TSRMLS_CC, E_NOTICE, "%s%s%s already exists, not adding",
+			php_error_docref(NULL, E_NOTICE, "%s%s%s already exists, not adding",
 			                 ZSTR_VAL(ce->name), (prop_info_ptr->flags & ZEND_ACC_STATIC) ? "::$" : "->", ZSTR_VAL(propname));
 			return FAILURE;
 		} else {
-			php_runkit_def_prop_remove_int(ce, propname, NULL, (zend_bool) 0, override_in_objects, (zend_property_info*) NULL TSRMLS_CC);
-			php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
+			php_runkit_def_prop_remove_int(ce, propname, NULL, (zend_bool) 0, override_in_objects, (zend_property_info*) NULL);
+			php_runkit_clear_all_functions_runtime_cache();
 		}
 	}
 	prop_info_ptr = NULL;
 	zend_string_addref(propname);
 
-	if (zend_declare_property_ex(ce, propname, pcopyval, visibility, doc_comment TSRMLS_CC) == FAILURE) {
+	if (zend_declare_property_ex(ce, propname, pcopyval, visibility, doc_comment) == FAILURE) {
 		zval_ptr_dtor(pcopyval);
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Cannot declare new property");
+		php_error_docref(NULL, E_WARNING, "Cannot declare new property");
 		return FAILURE;
 	}
 
 	if (ce != definer_class) {
 		if (zend_hash_find(&ce->properties_info, propname) == NULL) {
 			zval_ptr_dtor(pcopyval);
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Cannot find just added property's info");
+			php_error_docref(NULL, E_WARNING, "Cannot find just added property's info");
 			return FAILURE;
 		}
 		if (visibility & ZEND_ACC_PRIVATE) {
@@ -252,7 +252,7 @@ int php_runkit_def_prop_add_int(zend_class_entry *ce, zend_string* propname, zva
 
 	if (!prop_info_ptr && (prop_info_ptr = zend_hash_find_ptr(&ce->properties_info, propname)) == NULL) {
 		zval_ptr_dtor(pcopyval);
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Cannot find just added property's info");
+		php_error_docref(NULL, E_WARNING, "Cannot find just added property's info");
 		return FAILURE;
 	}
 	offset = prop_info_ptr->offset;
@@ -337,7 +337,7 @@ int php_runkit_def_prop_add_int(zend_class_entry *ce, zend_string* propname, zva
 /* {{{ php_runkit_def_prop_add
  */
 static int php_runkit_def_prop_add(zend_string *classname, zend_string *propname, zval *value,
-                                   long visibility, int override_in_objects TSRMLS_DC)
+                                   long visibility, int override_in_objects)
 {
 	zend_class_entry *ce;
 	zval *copyval;
@@ -348,7 +348,7 @@ static int php_runkit_def_prop_add(zend_string *classname, zend_string *propname
 	}
 
 	if (ce->type & ZEND_INTERNAL_CLASS) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Adding properties to internal classes is not allowed");
+		php_error_docref(NULL, E_WARNING, "Adding properties to internal classes is not allowed");
 		return FAILURE;
 	} else {
 		copyval = value;
@@ -357,15 +357,15 @@ static int php_runkit_def_prop_add(zend_string *classname, zend_string *propname
 	/* Check for existing property by this name */
 	/* Existing public? */
 	if ((existing_prop = zend_hash_find_ptr(&ce->properties_info, propname)) != NULL) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s%s%s already exists", ZSTR_VAL(classname),
+		php_error_docref(NULL, E_WARNING, "%s%s%s already exists", ZSTR_VAL(classname),
 		                 (existing_prop->flags & ZEND_ACC_STATIC) ? "::$" : "->", ZSTR_VAL(propname));
 		return FAILURE;
 	}
 
-	php_runkit_zval_resolve_class_constant(copyval, ce TSRMLS_CC);
+	php_runkit_zval_resolve_class_constant(copyval, ce);
 
 	if (php_runkit_def_prop_add_int(ce, propname, copyval, visibility, NULL, ce, 0,
-	                                override_in_objects TSRMLS_CC) != SUCCESS) {
+	                                override_in_objects) != SUCCESS) {
 		return FAILURE;
 	}
 
@@ -402,14 +402,14 @@ static inline void php_runkit_dump_hashtable_keys(HashTable* ht) {
 /* {{{ php_runkit_def_prop_remove_int */
 int php_runkit_def_prop_remove_int(zend_class_entry *ce, zend_string *propname, zend_class_entry *class_we_originally_removing_from,
                                    zend_bool was_static, zend_bool remove_from_objects,
-                                   zend_property_info *parent_property TSRMLS_DC)
+                                   zend_property_info *parent_property)
 {
 	// FIXME this should never be called until it is fixed.
 	uint32_t i;
 	int offset;
 	int flags;
 	zend_property_info *property_info_ptr;
-	php_error_docref(NULL TSRMLS_CC, E_ERROR, "php_runkit_def_prop_remove_int should not be called");
+	php_error_docref(NULL, E_ERROR, "php_runkit_def_prop_remove_int should not be called");
 
 	if ((property_info_ptr = zend_hash_find_ptr(&ce->properties_info, propname)) != NULL) {
 		if (class_we_originally_removing_from == NULL) {
@@ -447,7 +447,7 @@ int php_runkit_def_prop_remove_int(zend_class_entry *ce, zend_string *propname, 
 
 		if (property_info_ptr->flags & (ZEND_ACC_PRIVATE|ZEND_ACC_SHADOW)) {
 			if (offset >= 0) {
-				php_runkit_remove_overlapped_property_from_childs_foreach(RUNKIT_53_TSRMLS_PARAM(EG(class_table)),
+				php_runkit_remove_overlapped_property_from_childs_foreach(EG(class_table),
 				                               ce, propname, offset,
 				                               property_info_ptr->flags & ZEND_ACC_STATIC, remove_from_objects, property_info_ptr);
 			}
@@ -461,13 +461,13 @@ int php_runkit_def_prop_remove_int(zend_class_entry *ce, zend_string *propname, 
 			} ZEND_HASH_FOREACH_END();
 		}
 
-		// php_runkit_remove_property_from_reflection_objects(ce, propname TSRMLS_CC);
-		php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
+		// php_runkit_remove_property_from_reflection_objects(ce, propname);
+		php_runkit_clear_all_functions_runtime_cache();
 	} else {
 		if (parent_property) {
 			return SUCCESS;
 		} else {
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s::%s does not exist", ZSTR_VAL(ce->name), ZSTR_VAL(propname));
+			php_error_docref(NULL, E_WARNING, "%s::%s does not exist", ZSTR_VAL(ce->name), ZSTR_VAL(propname));
 			return FAILURE;
 		}
 	}
@@ -479,7 +479,7 @@ int php_runkit_def_prop_remove_int(zend_class_entry *ce, zend_string *propname, 
 	PHP_RUNKIT_ITERATE_THROUGH_OBJECTS_STORE_BEGIN(i)
 		if (object->ce == ce) {
 			if (!remove_from_objects) {
-				php_runkit_make_object_property_public(propname, object, offset, property_info_ptr TSRMLS_CC);
+				php_runkit_make_object_property_public(propname, object, offset, property_info_ptr);
 			} else {
 				if (!Z_ISUNDEF(object->properties_table[offset])) {
 					if (!object->properties) {
@@ -508,7 +508,7 @@ st_success:
 
 /* {{{ php_runkit_def_prop_remove */
 static int php_runkit_def_prop_remove(zend_string *classname, zend_string *propname,
-                                      zend_bool remove_from_objects TSRMLS_DC)
+                                      zend_bool remove_from_objects)
 {
 	zend_class_entry *ce;
 
@@ -517,18 +517,18 @@ static int php_runkit_def_prop_remove(zend_string *classname, zend_string *propn
 	}
 
 	if (ce->type & ZEND_INTERNAL_CLASS) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Removing properties from internal classes is not allowed");
+		php_error_docref(NULL, E_WARNING, "Removing properties from internal classes is not allowed");
 		return FAILURE;
 	}
 
-	php_runkit_clear_all_functions_runtime_cache(TSRMLS_C);
-	return php_runkit_def_prop_remove_int(ce, propname, NULL, 0, remove_from_objects, NULL TSRMLS_CC);
+	php_runkit_clear_all_functions_runtime_cache();
+	return php_runkit_def_prop_remove_int(ce, propname, NULL, 0, remove_from_objects, NULL);
 }
 /* }}} */
 
 /* {{{ php_runkit_remove_property_from_reflection_objects */
 /*
-void php_runkit_remove_property_from_reflection_objects(zend_class_entry *ce, zend_string *propname TSRMLS_DC) {
+void php_runkit_remove_property_from_reflection_objects(zend_class_entry *ce, zend_string *propname) {
 	uint32_t i;
 	extern PHPAPI zend_class_entry *reflection_property_ptr;
 
@@ -570,7 +570,7 @@ PHP_FUNCTION(runkit_default_property_add)
 
 	visibility = ZEND_ACC_PUBLIC;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "SSz|l/", &classname, &propname,
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "SSz|l/", &classname, &propname,
 	                          &value, &visibility) == FAILURE) {
 		RETURN_FALSE;
 	}
@@ -579,7 +579,7 @@ PHP_FUNCTION(runkit_default_property_add)
 
 	visibility &= ~PHP_RUNKIT_OVERRIDE_OBJECTS;
 
-	RETURN_BOOL(php_runkit_def_prop_add(classname, propname, value, visibility, override_in_objects TSRMLS_CC) == SUCCESS);
+	RETURN_BOOL(php_runkit_def_prop_add(classname, propname, value, visibility, override_in_objects) == SUCCESS);
 }
 /* }}} */
 
@@ -592,11 +592,11 @@ PHP_FUNCTION(runkit_default_property_remove)
 	zend_string *propname;
 	zend_bool remove_from_objects = 0;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "SS|b", &classname, &propname, &remove_from_objects) == FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "SS|b", &classname, &propname, &remove_from_objects) == FAILURE) {
 		RETURN_FALSE;
 	}
 
-	RETURN_BOOL(php_runkit_def_prop_remove(classname, propname, remove_from_objects TSRMLS_CC) == SUCCESS);
+	RETURN_BOOL(php_runkit_def_prop_remove(classname, propname, remove_from_objects) == SUCCESS);
 }
 /* }}} */
 

@@ -231,6 +231,7 @@ Define customized superglobal variables for general purpose use.
    </dir> <!-- //tests -->
    <file name="config.m4" role="src" />
    <file name="config.w32" role="src" />
+   <file name="runkit.h" role="src" />
    <file name="php_runkit.h" role="src" />
    <file name="php_runkit_hash.h" role="src" />
    <file name="php_runkit_zend_execute_API.h" role="src" />

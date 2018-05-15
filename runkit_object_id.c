@@ -3,7 +3,7 @@
   | PHP Version 7                                                        |
   +----------------------------------------------------------------------+
   | Copyright (c) 1997-2006 The PHP Group, (c) 2008-2015 Dmitry Zenovich |
-  | (c) 2016-2017 Tyson Andre                                            |
+  | (c) 2016-2018 Tyson Andre                                            |
   +----------------------------------------------------------------------+
   | This source file is subject to the new BSD license,                  |
   | that is bundled with this package in the file LICENSE, and is        |
@@ -19,7 +19,7 @@
   +----------------------------------------------------------------------+
 */
 
-#include "php_runkit.h"
+#include "runkit.h"
 
 /* {{{ proto int runkit_object_id(object instance)
 Fetch the Object Handle ID from an instance */

@@ -1,8 +1,10 @@
-#!/bin/bash -xeu
+#!/bin/bash -eu
 # Print a folder name based on the integer width(32 bit or 64 bit), whether or not NTS is used (implied by PHP_CONFIGURE_ARGS), and PHP_CONFIGURE_ARGS.
 PHP_NTS_NORMAL_VERSION=${PHP_NTS_VERSION//RC[0-9]/}
-if [ "$PHP_NTS_NORMAL_VERSION" = "7.1.0" ]; then
-	PHP_NTS_NORMAL_VERSION=7.1.0RC1
+if [ "$PHP_NTS_NORMAL_VERSION" = "7.3.0" ]; then
+	PHP_NTS_NORMAL_VERSION=7.3.0-$(date "+%Y-%m-%d")
+elif [ "$PHP_NTS_NORMAL_VERSION" = "7.2.0" ]; then
+	PHP_NTS_NORMAL_VERSION=7.2.0RC5
 fi
 PHP_INSTALL_DIR="$HOME/travis_cache/php-$PHP_NTS_NORMAL_VERSION"
 if [ "${USE_32BIT:-0}" = "1" ]; then
